@@ -216,8 +216,14 @@ class GF_Plivo_Dashboard_Widget {
     }
 
     private function get_usage_data() {
-        $cached = get_transient('gf_plivo_usage_data');
-        if ($cached !== false) return $cached;
+        // Check for a force refresh parameter
+        $force_refresh = isset($_GET['refresh_plivo_stats']) || (defined('DOING_AJAX') && DOING_AJAX);
+        
+        // Only use cache if not forcing a refresh
+        if (!$force_refresh) {
+            $cached = get_transient('gf_plivo_usage_data');
+            if ($cached !== false) return $cached;
+        }
 
         global $wpdb;
         $table_name = $wpdb->prefix . 'gf_plivo_messages';
@@ -298,6 +304,85 @@ class GF_Plivo_Dashboard_Widget {
         
         set_transient('gf_plivo_usage_data', $usage, HOUR_IN_SECONDS);
         return $usage;
+    }
+
+    public function clear_usage_cache() {
+        delete_transient('gf_plivo_usage_data');
+    }
+    
+    /**
+     * Get monthly statistics
+     * 
+     * @return int Number of messages sent in the current month
+     */
+    public function get_monthly_stats() {
+        $data = $this->get_usage_data();
+        if (is_wp_error($data)) {
+            return 0;
+        }
+        return $data['month'];
+    }
+    
+    /**
+     * Get yearly statistics
+     * 
+     * @return int Number of messages sent in the current year
+     */
+    public function get_yearly_stats() {
+        $data = $this->get_usage_data();
+        if (is_wp_error($data)) {
+            return 0;
+        }
+        return $data['year'];
+    }
+    
+    /**
+     * Get total messages count
+     * 
+     * @return int Total number of messages sent
+     */
+    public function get_total_messages() {
+        $data = $this->get_usage_data();
+        if (is_wp_error($data)) {
+            return 0;
+        }
+        return $data['total'];
+    }
+    
+    /**
+     * Get top forms by SMS usage
+     * 
+     * @return array Top forms with their message counts
+     */
+    public function get_top_forms() {
+        $data = $this->get_usage_data();
+        if (is_wp_error($data)) {
+            return array();
+        }
+        return $data['top_forms'];
+    }
+    
+    /**
+     * Get recent messages
+     * 
+     * @return array Recent messages
+     */
+    public function get_recent_messages() {
+        $data = $this->get_usage_data();
+        if (is_wp_error($data)) {
+            return array();
+        }
+        return $data['recent_messages'];
+    }
+    
+    /**
+     * Force refresh the statistics
+     * 
+     * @return array Fresh usage data
+     */
+    public function refresh_stats() {
+        $this->clear_usage_cache();
+        return $this->get_usage_data();
     }
 }
 

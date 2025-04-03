@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Gravity Forms Plivo Add-On
  * Description: Integrate Gravity Forms with Plivo for SMS notifications
- * Version: 3.0
+ * Version: 3.1
  * Author: 8am GmbH
  * Text Domain: gravityformsplivo
  * GitHub Plugin URI: https://github.com/eightam/gravityforms-plivo
@@ -55,7 +55,7 @@ add_action('in_plugin_update_message-gravityforms-plivo/gravityforms-plivo.php',
 GFForms::include_feed_addon_framework();
 
 class GF_Plivo_AddOn extends GFFeedAddOn {
-    protected $_version = '3.0';
+    protected $_version = '3.1';
     protected $_min_gravityforms_version = '2.5';
     protected $_slug = 'gravityformsplivo';
     protected $_path = 'gravityformsplivo/plivo.php';
@@ -273,7 +273,9 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
                 <?php foreach ($active_feeds as $index => $feed) : 
                     $message_template = rgars($feed, 'meta/messageTemplate');
                     $receiver_number = rgars($feed, 'meta/receiverNumber');
-                    $message = GFCommon::replace_variables($message_template, $form, $entry, false, true, false, 'text');
+                    
+                    // Get message with HTML filtered from merge tags
+                    $message = $this->get_message_with_filtered_merge_tags($message_template, $form, $entry);
                     $display = ($index === 0) ? 'block' : 'none';
                     
                     // Create resend URL
@@ -441,18 +443,96 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
             form_id bigint(20) NOT NULL,
             entry_id bigint(20) NOT NULL,
             feed_id bigint(20) NOT NULL,
-            to_number varchar(20) NOT NULL,
+            to_number varchar(255) NOT NULL,
             message text NOT NULL,
-            message_uuid varchar(100) NOT NULL,
-            status varchar(20) NOT NULL,
-            date_created datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            message_uuid varchar(255) NOT NULL,
+            status varchar(50) NOT NULL,
+            date_created datetime NOT NULL,
             PRIMARY KEY (id),
-            KEY form_entry (form_id, entry_id),
-            KEY message_uuid (message_uuid)
+            KEY form_id (form_id),
+            KEY entry_id (entry_id),
+            KEY message_uuid (message_uuid),
+            KEY date_created (date_created)
         ) $charset_collate;";
         
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
+        
+        // Check if table exists
+        $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$table_name'") === $table_name;
+        
+        if ($table_exists) {
+            // Log activation
+            error_log('Plivo Add-On: Activation - Table exists, checking structure');
+            
+            // Check for column name issues - specifically looking for 'receiver' vs 'to_number'
+            $columns = $wpdb->get_results("DESCRIBE $table_name");
+            $column_names = array_map(function($col) { return $col->Field; }, $columns);
+            
+            // Check if to_number column exists
+            if (!in_array('to_number', $column_names)) {
+                error_log('Plivo Add-On: Activation - to_number column missing');
+                
+                // Check if an old 'receiver' column exists instead
+                if (in_array('receiver', $column_names)) {
+                    error_log('Plivo Add-On: Activation - Found receiver column, renaming to to_number');
+                    // Rename the column
+                    $wpdb->query("ALTER TABLE $table_name CHANGE receiver to_number varchar(255) NOT NULL");
+                } else {
+                    error_log('Plivo Add-On: Activation - Adding missing to_number column');
+                    // Add the missing column
+                    $wpdb->query("ALTER TABLE $table_name ADD COLUMN to_number varchar(255) NOT NULL AFTER feed_id");
+                }
+            }
+            
+            // Check column sizes and update if needed
+            $column_info = $wpdb->get_row("SHOW COLUMNS FROM $table_name LIKE 'to_number'");
+            if ($column_info && strpos($column_info->Type, 'varchar(50)') !== false) {
+                // Increase column size
+                error_log('Plivo Add-On: Activation - Increasing to_number column size');
+                $wpdb->query("ALTER TABLE $table_name MODIFY to_number VARCHAR(255) NOT NULL");
+            }
+            
+            // Check if message_uuid field is too small
+            $column_info = $wpdb->get_row("SHOW COLUMNS FROM $table_name LIKE 'message_uuid'");
+            if ($column_info && strpos($column_info->Type, 'varchar(100)') !== false) {
+                error_log('Plivo Add-On: Activation - Increasing message_uuid column size');
+                $wpdb->query("ALTER TABLE $table_name MODIFY message_uuid VARCHAR(255) NOT NULL");
+            }
+            
+            // Check if status field is too small
+            $column_info = $wpdb->get_row("SHOW COLUMNS FROM $table_name LIKE 'status'");
+            if ($column_info && strpos($column_info->Type, 'varchar(20)') !== false) {
+                error_log('Plivo Add-On: Activation - Increasing status column size');
+                $wpdb->query("ALTER TABLE $table_name MODIFY status VARCHAR(50) NOT NULL");
+            }
+            
+            // Add missing indexes if needed
+            $indexes = $wpdb->get_results("SHOW INDEX FROM $table_name");
+            $index_names = array_map(function($index) { return $index->Key_name; }, $indexes);
+            
+            if (!in_array('date_created', $index_names)) {
+                error_log('Plivo Add-On: Activation - Adding date_created index');
+                $wpdb->query("ALTER TABLE $table_name ADD INDEX date_created (date_created)");
+            }
+            
+            if (!in_array('entry_id', $index_names)) {
+                error_log('Plivo Add-On: Activation - Adding entry_id index');
+                $wpdb->query("ALTER TABLE $table_name ADD INDEX entry_id (entry_id)");
+            }
+            
+            if (!in_array('form_id', $index_names)) {
+                error_log('Plivo Add-On: Activation - Adding form_id index');
+                $wpdb->query("ALTER TABLE $table_name ADD INDEX form_id (form_id)");
+            }
+            
+            if (!in_array('message_uuid', $index_names)) {
+                error_log('Plivo Add-On: Activation - Adding message_uuid index');
+                $wpdb->query("ALTER TABLE $table_name ADD INDEX message_uuid (message_uuid)");
+            }
+        } else {
+            error_log('Plivo Add-On: Activation - Table does not exist after dbDelta. This is unexpected.');
+        }
         
         // Schedule a one-time event to import messages
         if (!wp_next_scheduled('gf_plivo_import_messages')) {
@@ -471,6 +551,7 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
         
         // Check if we already have messages in the database
         $table_name = $wpdb->prefix . 'gf_plivo_messages';
+        
         $count = $wpdb->get_var("SELECT COUNT(*) FROM $table_name");
         
         // If we already have messages, don't import again
@@ -489,8 +570,16 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
         }
         
         // Initialize Plivo client
-        if (!class_exists('RestClient')) {
-            require_once('vendor/plivo/plivo-php/src/Plivo/RestClient.php');
+        if (!class_exists('\\Plivo\\RestClient')) {
+            // Try to load via Composer autoloader first
+            $autoloader = dirname(__FILE__) . '/vendor/autoload.php';
+            if (file_exists($autoloader)) {
+                require_once($autoloader);
+            } else {
+                // Fallback to direct file includes if autoloader is not available
+                require_once(dirname(__FILE__) . '/vendor/plivo/plivo-php/src/Plivo/BaseClient.php');
+                require_once(dirname(__FILE__) . '/vendor/plivo/plivo-php/src/Plivo/RestClient.php');
+            }
         }
         
         try {
@@ -609,25 +698,268 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
      * @param string $message Message content
      * @param string $message_uuid Plivo message UUID
      * @param string $status Message status
+     * @return bool Success or failure
      */
     public function track_sms_message($form_id, $entry_id, $feed_id, $to_number, $message, $message_uuid, $status) {
         global $wpdb;
         
+        $this->log_debug(__METHOD__ . '(): Tracking SMS message in database.');
+        
+        // Define table name
         $table_name = $wpdb->prefix . 'gf_plivo_messages';
         
-        $wpdb->insert(
-            $table_name,
-            array(
-                'form_id' => $form_id,
-                'entry_id' => $entry_id,
-                'feed_id' => $feed_id,
-                'to_number' => $to_number,
-                'message' => $message,
-                'message_uuid' => $message_uuid,
-                'status' => $status,
-                'date_created' => current_time('mysql')
+        // Check if the table exists
+        $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$table_name'") === $table_name;
+        
+        if (!$table_exists) {
+            $this->log_debug(__METHOD__ . '(): Table does not exist, creating it now.');
+            
+            // Create the table directly instead of using the activate method
+            $charset_collate = $wpdb->get_charset_collate();
+            $sql = "CREATE TABLE IF NOT EXISTS $table_name (
+                id bigint(20) NOT NULL AUTO_INCREMENT,
+                form_id bigint(20) NOT NULL,
+                entry_id bigint(20) NOT NULL,
+                feed_id bigint(20) NOT NULL,
+                to_number varchar(255) NOT NULL,
+                message text NOT NULL,
+                message_uuid varchar(255) NOT NULL,
+                status varchar(50) NOT NULL,
+                date_created datetime NOT NULL,
+                PRIMARY KEY (id),
+                KEY form_id (form_id),
+                KEY entry_id (entry_id),
+                KEY message_uuid (message_uuid),
+                KEY date_created (date_created)
+            ) $charset_collate;";
+            
+            // Use dbDelta for proper table creation
+            require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+            dbDelta($sql);
+            
+            // Check again
+            $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$table_name'") === $table_name;
+            if (!$table_exists) {
+                $this->log_debug(__METHOD__ . '(): CRITICAL ERROR - Failed to create table!');
+                error_log('Plivo Add-On: Failed to create SMS tracking table: ' . $wpdb->last_error);
+                
+                // Add admin notice about the critical error
+                add_action('admin_notices', function() use ($table_name, $wpdb) {
+                    echo '<div class="notice notice-error is-dismissible">';
+                    echo '<p><strong>Gravity Forms Plivo Add-On:</strong> ' . sprintf(
+                        __('Critical error: Could not create or access the SMS tracking table (%s). SMS messages will not be tracked. Database error: %s', 'gravityformsplivo'),
+                        $table_name,
+                        $wpdb->last_error
+                    ) . '</p>';
+                    echo '</div>';
+                });
+                
+                return false;
+            }
+        } else {
+            // Table exists, check if it has the right columns
+            $columns = $wpdb->get_results("DESCRIBE $table_name");
+            $column_names = array_map(function($col) { return $col->Field; }, $columns);
+            
+            // Check if to_number column exists
+            if (!in_array('to_number', $column_names)) {
+                $this->log_debug(__METHOD__ . '(): to_number column missing, checking for receiver column');
+                
+                // Check if an old 'receiver' column exists instead
+                if (in_array('receiver', $column_names)) {
+                    $this->log_debug(__METHOD__ . '(): Found receiver column, renaming to to_number');
+                    // Rename the column
+                    $wpdb->query("ALTER TABLE $table_name CHANGE receiver to_number varchar(255) NOT NULL");
+                } else {
+                    $this->log_debug(__METHOD__ . '(): Adding missing to_number column');
+                    // Add the missing column
+                    $wpdb->query("ALTER TABLE $table_name ADD COLUMN to_number varchar(255) NOT NULL AFTER feed_id");
+                }
+                
+                // Verify the column was added/renamed
+                $to_number_exists = $wpdb->get_var("SHOW COLUMNS FROM $table_name LIKE 'to_number'") === 'to_number';
+                if (!$to_number_exists) {
+                    $this->log_debug(__METHOD__ . '(): Failed to add/rename to_number column: ' . $wpdb->last_error);
+                    error_log('Plivo Add-On: Failed to add/rename to_number column: ' . $wpdb->last_error);
+                    return false;
+                }
+            }
+        }
+        
+        // Check for duplicate message
+        $existing_message = $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT id FROM $table_name WHERE message_uuid = %s",
+                $message_uuid
             )
         );
+        
+        if ($existing_message) {
+            $this->log_debug(__METHOD__ . '(): Message with UUID ' . $message_uuid . ' already exists in database. Updating status.');
+            
+            // Update the existing message
+            $result = $wpdb->update(
+                $table_name,
+                array(
+                    'status' => $status,
+                    'date_created' => current_time('mysql')
+                ),
+                array('id' => $existing_message)
+            );
+            
+            if ($result === false) {
+                $this->log_debug(__METHOD__ . '(): Failed to update message status: ' . $wpdb->last_error);
+                error_log('Plivo Add-On: Failed to update message status: ' . $wpdb->last_error);
+                return false;
+            }
+        } else {
+            // Insert new message
+            $this->log_debug(__METHOD__ . '(): Inserting new message record.');
+            
+            $result = $wpdb->insert(
+                $table_name,
+                array(
+                    'form_id' => $form_id,
+                    'entry_id' => $entry_id,
+                    'feed_id' => $feed_id,
+                    'to_number' => $to_number,
+                    'message' => $message,
+                    'message_uuid' => $message_uuid,
+                    'status' => $status,
+                    'date_created' => current_time('mysql')
+                )
+            );
+            
+            if ($result === false) {
+                $this->log_debug(__METHOD__ . '(): Failed to insert message: ' . $wpdb->last_error);
+                error_log('Plivo Add-On: Failed to insert message: ' . $wpdb->last_error);
+                return false;
+            }
+        }
+        
+        // Clear dashboard cache
+        $this->clear_dashboard_cache();
+        
+        $this->log_debug(__METHOD__ . '(): SMS message tracked successfully.');
+        return true;
+    }
+    
+    /**
+     * Process feed and send SMS
+     *
+     * @param array $feed The feed to process
+     * @param array $entry The entry being processed
+     * @param array $form The form being processed
+     * @param bool $is_resend Whether this is a resend
+     * @return bool
+     */
+    public function process_feed($feed, $entry, $form, $is_resend = false) {
+        $this->log_debug(__METHOD__ . '(): Processing feed. Is resend: ' . ($is_resend ? 'Yes' : 'No'));
+        
+        // Get feed data
+        $receiver_number = rgars($feed, 'meta/receiverNumber');
+        $message_template = rgars($feed, 'meta/messageTemplate');
+        
+        // Get message with HTML filtered from merge tags
+        $message = $this->get_message_with_filtered_merge_tags($message_template, $form, $entry);
+        
+        // Get Plivo API credentials
+        $auth_id = $this->get_plugin_setting('auth_id');
+        $auth_token = $this->get_plugin_setting('auth_token');
+        $sender_id = $this->get_plugin_setting('sender_id');
+        
+        if (empty($auth_id) || empty($auth_token) || empty($sender_id)) {
+            $this->add_note_to_entry(
+                $entry['id'], 
+                __('SMS Sending Failed', 'gravityformsplivo'),
+                array(
+                    'to' => $receiver_number,
+                    'message' => $message,
+                    'error' => __('Plivo API credentials not configured.', 'gravityformsplivo')
+                ),
+                'error'
+            );
+            return false;
+        }
+        
+        // Initialize Plivo client
+        if (!class_exists('\\Plivo\\RestClient')) {
+            // Try to load via Composer autoloader first
+            $autoloader = dirname(__FILE__) . '/vendor/autoload.php';
+            if (file_exists($autoloader)) {
+                require_once($autoloader);
+            } else {
+                // Fallback to direct file includes if autoloader is not available
+                require_once(dirname(__FILE__) . '/vendor/plivo/plivo-php/src/Plivo/BaseClient.php');
+                require_once(dirname(__FILE__) . '/vendor/plivo/plivo-php/src/Plivo/RestClient.php');
+            }
+        }
+        
+        try {
+            $client = new \Plivo\RestClient($auth_id, $auth_token);
+            
+            // Send SMS
+            $response = $client->messages->create(
+                $sender_id,
+                array($receiver_number),
+                $message
+            );
+            
+            // Debug response
+            $this->log_debug(__METHOD__ . '(): SMS sent successfully. Response: ' . print_r($response, true));
+            
+            // Get message UUID
+            $message_uuid = $response->getMessageUuid()[0];
+            $this->log_debug(__METHOD__ . '(): Message UUID: ' . $message_uuid);
+            
+            // Ensure database tracking works
+            $tracking_result = false;
+            
+            // Track the message in database with appropriate status
+            if ($is_resend) {
+                $this->log_debug(__METHOD__ . '(): This is a resend. Tracking with status "resent"');
+                $tracking_result = $this->track_sms_message($form['id'], $entry['id'], $feed['id'], $receiver_number, $message, $message_uuid, 'resent');
+            } else {
+                $this->log_debug(__METHOD__ . '(): This is a new send. Tracking with status "sent"');
+                $tracking_result = $this->track_sms_message($form['id'], $entry['id'], $feed['id'], $receiver_number, $message, $message_uuid, 'sent');
+            }
+            
+            if (!$tracking_result) {
+                $this->log_debug(__METHOD__ . '(): WARNING - Failed to track SMS in database. Check error logs for details.');
+                error_log('Plivo Add-On: Failed to track SMS in database. Message UUID: ' . $message_uuid);
+            }
+            
+            // Add note to entry
+            $this->add_note_to_entry(
+                $entry['id'], 
+                $is_resend ? __('SMS Resent', 'gravityformsplivo') : __('SMS Sent', 'gravityformsplivo'),
+                array(
+                    'to' => $receiver_number,
+                    'message' => $message,
+                    'uuid' => $message_uuid
+                )
+            );
+            
+            return true;
+            
+        } catch (Exception $e) {
+            $this->log_debug(__METHOD__ . '(): ERROR sending SMS: ' . $e->getMessage());
+            error_log('Plivo Add-On: Error sending SMS: ' . $e->getMessage());
+            
+            // Add note to entry
+            $this->add_note_to_entry(
+                $entry['id'], 
+                __('SMS Sending Failed', 'gravityformsplivo'),
+                array(
+                    'to' => $receiver_number,
+                    'message' => $message,
+                    'error' => $e->getMessage()
+                ),
+                'error'
+            );
+            
+            return false;
+        }
     }
     
     /**
@@ -646,6 +978,103 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
             array('status' => $status),
             array('message_uuid' => $message_uuid)
         );
+        
+        // Clear dashboard statistics cache to show the updated message immediately
+        if (class_exists('GF_Plivo_Dashboard_Widget')) {
+            $dashboard = GF_Plivo_Dashboard_Widget::get_instance();
+            if (method_exists($dashboard, 'clear_usage_cache')) {
+                $dashboard->clear_usage_cache();
+            } else {
+                // Fallback: delete the transient directly
+                delete_transient('gf_plivo_usage_data');
+            }
+        }
+    }
+    
+    /**
+     * Get message with HTML filtered from merge tags
+     *
+     * @param string $message_template The message template with merge tags
+     * @param array $form The form being processed
+     * @param array $entry The entry being processed
+     * @return string
+     */
+    public function get_message_with_filtered_merge_tags($message_template, $form, $entry) {
+        // First, replace variables using Gravity Forms
+        $message = GFCommon::replace_variables($message_template, $form, $entry, false, true, false, 'text');
+        
+        // Strip any remaining HTML tags
+        $message = wp_strip_all_tags($message);
+        
+        // Decode HTML entities to ensure proper display
+        $message = html_entity_decode($message, ENT_QUOTES, 'UTF-8');
+        
+        // Preserve line breaks but normalize horizontal whitespace
+        $message = preg_replace('/[ \t]+/', ' ', $message); // Replace multiple spaces/tabs with a single space
+        $message = preg_replace('/[ \t]*\n[ \t]*/', "\n", $message); // Clean up whitespace around line breaks
+        $message = trim($message);
+        
+        return $message;
+    }
+    
+    /**
+     * Add a note to the entry
+     *
+     * @param int $entry_id Entry ID
+     * @param string $note_title Note title
+     * @param array $details Note details
+     * @param string $note_type Note type (success, error)
+     */
+    public function add_note_to_entry($entry_id, $note_title, $details, $note_type = 'success') {
+        $note = $note_title . "\n\n";
+        if (!empty($details['to'])) {
+            $note .= __('To:', 'gravityformsplivo') . ' ' . $details['to'] . "\n";
+        }
+        if (!empty($details['message'])) {
+            $note .= __('Message:', 'gravityformsplivo') . ' ' . $details['message'] . "\n";
+        }
+        if (!empty($details['uuid'])) {
+            $note .= __('UUID:', 'gravityformsplivo') . ' ' . $details['uuid'] . "\n";
+        }
+        if (!empty($details['error'])) {
+            $note .= __('Error:', 'gravityformsplivo') . ' ' . $details['error'] . "\n";
+        }
+        
+        // Get current user information for the note
+        $user_id = get_current_user_id();
+        $user_name = 'Plivo Add-On';
+        
+        if ($user_id) {
+            $user = get_userdata($user_id);
+            if ($user) {
+                $user_name = $user->display_name ?: $user->user_login;
+            }
+        }
+        
+        // Convert our note_type to Gravity Forms note_type
+        $gf_note_type = ($note_type === 'success') ? 'success' : 'error';
+        
+        // Add the note using GFAPI
+        GFAPI::add_note($entry_id, $user_id, $user_name, $note, $gf_note_type);
+    }
+    
+    /**
+     * Helper method to clear dashboard cache
+     */
+    private function clear_dashboard_cache() {
+        if (class_exists('GF_Plivo_Dashboard_Widget')) {
+            $dashboard = GF_Plivo_Dashboard_Widget::get_instance();
+            if (method_exists($dashboard, 'clear_usage_cache')) {
+                $dashboard->clear_usage_cache();
+                $this->log_debug(__METHOD__ . '(): Dashboard cache cleared via method');
+            } else {
+                // Fallback: delete the transient directly
+                $deleted = delete_transient('gf_plivo_usage_data');
+                $this->log_debug(__METHOD__ . '(): Dashboard cache cleared directly: ' . ($deleted ? 'YES' : 'NO'));
+            }
+        } else {
+            $this->log_debug(__METHOD__ . '(): WARNING - GF_Plivo_Dashboard_Widget class not found');
+        }
     }
 }
 

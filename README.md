@@ -24,6 +24,12 @@ This plugin allows you to send SMS notifications via Plivo when a form is submit
 
 ## Changelog
 
+### 3.1 - April 3, 2025
+- Fixed critical issue with SMS messages not being tracked in the database
+- Enhanced error handling for database operations
+- Improved logging for better diagnostics
+- Optimized dashboard widget data retrieval
+
 ### 3.0 - April 3, 2025
 - Added SMS preview in entry sidebar with dropdown selector
 - Added ability to resend SMS messages from the entry view

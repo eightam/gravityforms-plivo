@@ -3,7 +3,7 @@ Contributors: 8amgmbh
 Tags: gravity forms, plivo, sms, notifications
 Requires at least: 5.0
 Tested up to: 6.4
-Stable tag: 3.0
+Stable tag: 3.1
 Requires PHP: 7.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -45,6 +45,12 @@ The plugin imports historical messages from Plivo API (limited to 90 days by Pli
 
 == Changelog ==
 
+= 3.1 =
+* Fixed critical issue with SMS messages not being tracked in the database
+* Enhanced error handling for database operations
+* Improved logging for better diagnostics
+* Optimized dashboard widget data retrieval
+
 = 3.0 =
 * Added SMS preview in entry sidebar with dropdown selector
 * Added ability to resend SMS messages from the entry view
@@ -59,6 +65,9 @@ The plugin imports historical messages from Plivo API (limited to 90 days by Pli
 * Initial release with basic SMS notification functionality
 
 == Upgrade Notice ==
+
+= 3.1 =
+This version fixes critical issues with SMS tracking and improves database operations.
 
 = 3.0 =
 This version adds SMS preview, resend functionality, and comprehensive tracking. It also includes automatic updates via GitHub.
