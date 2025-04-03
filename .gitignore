@@ -1,0 +1,74 @@
+# Operating System Files
+.DS_Store
+Thumbs.db
+Desktop.ini
+._*
+.Spotlight-V100
+.Trashes
+
+# IDE Files
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+*.code-workspace
+.phpstorm.meta.php
+.phpstorm.meta.php/*
+
+# Composer
+/vendor/
+composer.phar
+composer.lock
+
+# Node.js
+/node_modules/
+npm-debug.log
+yarn-error.log
+package-lock.json
+yarn.lock
+
+# Build Files
+/build/
+/dist/
+
+# WordPress Plugin Development
+*.log
+*.sql
+*.sqlite
+.htaccess
+/wp-config.php
+/wp-content/uploads/
+/wp-content/upgrade/
+/wp-content/backup-db/
+/wp-content/backups/
+/wp-content/blogs.dir/
+/wp-content/cache/
+/wp-content/upgrade/
+/wp-content/advanced-cache.php
+/wp-content/wp-cache-config.php
+/wp-content/plugins/hello.php
+
+# Plivo API Credentials (security)
+plivo-credentials.php
+*config.local.php
+*.env
+
+# Temporary Files
+*.tmp
+*.bak
+*.swp
+*~.nib
+
+# Unit tests / coverage reports
+/coverage/
+/phpunit.xml
+/tests/coverage/
+.phpunit.result.cache
+
+# Translations
+*.pot
+*.mo
+
+# Misc
+.sass-cache/
+.phpunit.result.cache
