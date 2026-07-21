@@ -1,5 +1,6 @@
 {
 	"require": {
-		"plivo/plivo-php": "^4.32"
+		"plivo/plivo-php": "^4.32",
+		"smstools-api/smstools-php-sdk": "^1.0"
 	}
 }

@@ -1,17 +1,25 @@
 # Gravity Forms Plivo Add-On
 
-Integrate Gravity Forms with Plivo for SMS notifications.
+Integrate Gravity Forms with SMS Tools (default gateway) and Plivo (fallback) for SMS notifications.
 
 ## Description
 
-This plugin allows you to send SMS notifications via Plivo when a form is submitted in Gravity Forms. Configure multiple feeds with different conditions to send customized SMS messages to different recipients.
+This plugin allows you to send SMS notifications when a form is submitted in Gravity Forms. Messages are sent through [SMS Tools](https://github.com/Smstools-api/smstools-php-sdk) as the default gateway, and automatically fall back to Plivo if a send via SMS Tools fails or SMS Tools is not configured. Configure multiple feeds with different conditions to send customized SMS messages to different recipients.
+
+## Gateways
+
+- **SMS Tools (default):** Configure your SMS Tools Client ID, Client Secret, and Sender ID under Forms → Settings → Plivo SMS.
+- **Plivo (fallback):** Configure your Plivo Auth ID, Auth Token, and Sender ID in the same settings screen. Plivo is only used when SMS Tools is not configured or a send via SMS Tools fails.
+
+Only one gateway needs to be configured for the plugin to work; configure both to enable automatic fallback.
 
 ## Features
 
 - Send SMS notifications when forms are submitted
+- SMS Tools used as the default gateway with automatic Plivo fallback
 - Configure multiple feeds with different conditions
 - Preview SMS messages in the entry view
-- Track SMS message history and statistics
+- Track SMS message history and statistics (including which gateway was used)
 - Resend SMS messages directly from the entry view
 - Automatic updates via GitHub repository
 
@@ -19,10 +27,17 @@ This plugin allows you to send SMS notifications via Plivo when a form is submit
 
 - WordPress 5.0 or higher
 - Gravity Forms 2.5 or higher
-- PHP 7.2 or higher
-- Plivo account with API credentials
+- PHP 8.0 or higher
+- An SMS Tools account and/or a Plivo account with API credentials
 
 ## Changelog
+
+### 3.2 - July 21, 2026
+- Added SMS Tools as the default SMS gateway (`smstools-api/smstools-php-sdk`)
+- Plivo is now used only as a fallback when SMS Tools is unavailable or a send fails
+- Added a `gateway` column to the SMS tracking table to record which gateway sent each message
+- Entry notes now record which gateway was used
+- Raised the minimum PHP requirement to 8.0 (required by the SMS Tools SDK)
 
 ### 3.1 - April 3, 2025
 - Fixed critical issue with SMS messages not being tracked in the database
@@ -67,8 +82,9 @@ GNU General Public License for more details.
 ## Installation
 
 1. Upload the plugin files to the `/wp-content/plugins/gravityforms-plivo` directory, or install the plugin through the WordPress plugins screen.
-2. Activate the plugin through the 'Plugins' screen in WordPress.
-3. Navigate to Forms → Settings → Plivo to configure your Plivo API credentials.
+2. Run `composer install` in the plugin directory to install the SMS Tools and Plivo SDK dependencies.
+3. Activate the plugin through the 'Plugins' screen in WordPress.
+4. Navigate to Forms → Settings → Plivo SMS to configure your SMS Tools credentials (default gateway) and, optionally, your Plivo credentials (fallback gateway).
 
 ## Updates
 
