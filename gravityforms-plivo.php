@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Gravity Forms Plivo Add-On
  * Description: Integrate Gravity Forms with SMS Tools (primary) and Plivo (fallback) for SMS notifications
- * Version: 3.2
+ * Version: 3.3
  * Author: 8am GmbH
  * Text Domain: gravityformsplivo
  * GitHub Plugin URI: https://github.com/eightam/gravityforms-plivo
@@ -55,7 +55,7 @@ add_action('in_plugin_update_message-gravityforms-plivo/gravityforms-plivo.php',
 GFForms::include_feed_addon_framework();
 
 class GF_Plivo_AddOn extends GFFeedAddOn {
-    protected $_version = '3.2';
+    protected $_version = '3.3';
     protected $_min_gravityforms_version = '2.5';
     protected $_slug = 'gravityformsplivo';
     protected $_path = 'gravityformsplivo/plivo.php';

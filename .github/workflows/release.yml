@@ -1,0 +1,92 @@
+name: Build and Release
+
+# Builds the distributable plugin zip (including Composer dependencies) and
+# publishes a GitHub Release whenever the plugin version in the header changes.
+# The release is version-driven: if a tag matching the current version already
+# exists, the job is a no-op. This pairs with the "always increase the version
+# number after changes" policy — bump the version, get a release.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read plugin version
+        id: version
+        run: |
+          set -euo pipefail
+          VERSION=$(grep -oiP '^\s*\*\s*Version:\s*\K[0-9][0-9.]*' gravityforms-plivo.php | head -1)
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not read the plugin version from gravityforms-plivo.php."
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Detected plugin version: $VERSION (tag v$VERSION)"
+
+      - name: Check whether the tag already exists
+        id: tagcheck
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --tags origin "refs/tags/${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag ${{ steps.version.outputs.tag }} already exists; nothing to release."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Tag ${{ steps.version.outputs.tag }} does not exist; a release will be built."
+          fi
+
+      - name: Set up PHP
+        if: steps.tagcheck.outputs.exists == 'false'
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.0'
+          tools: composer
+
+      - name: Install production dependencies
+        if: steps.tagcheck.outputs.exists == 'false'
+        run: composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
+
+      - name: Build release package
+        if: steps.tagcheck.outputs.exists == 'false'
+        run: |
+          set -euo pipefail
+          PLUGIN_SLUG=gravityforms-plivo
+          rm -rf build
+          mkdir -p "build/${PLUGIN_SLUG}"
+          rsync -a ./ "build/${PLUGIN_SLUG}/" \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            --exclude 'build/' \
+            --exclude 'node_modules/' \
+            --exclude '.gitignore' \
+            --exclude '.distignore' \
+            --exclude '*.log'
+          ( cd build && zip -rq "${PLUGIN_SLUG}.zip" "${PLUGIN_SLUG}" )
+          echo "Built build/${PLUGIN_SLUG}.zip:"
+          unzip -l "build/${PLUGIN_SLUG}.zip" | tail -n +2 | head -n 20
+
+      - name: Create GitHub Release
+        if: steps.tagcheck.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          make_latest: true
+          files: build/gravityforms-plivo.zip

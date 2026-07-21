@@ -3,7 +3,7 @@ Contributors: 8amgmbh
 Tags: gravity forms, sms tools, plivo, sms, notifications
 Requires at least: 5.0
 Tested up to: 6.4
-Stable tag: 3.2
+Stable tag: 3.3
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -46,6 +46,10 @@ The plugin imports historical messages from Plivo API (limited to 90 days by Pli
 
 == Changelog ==
 
+= 3.3 =
+* Added GitHub Actions release workflow that builds the distributable plugin zip (with Composer dependencies) and publishes a tagged GitHub Release whenever the plugin version changes
+* Added a version-bump check workflow that requires the version to be increased when plugin source changes
+
 = 3.2 =
 * Added SMS Tools (smstools-php-sdk) as the default primary SMS gateway
 * Plivo is now used only as a fallback when SMS Tools sending fails
@@ -74,6 +78,9 @@ The plugin imports historical messages from Plivo API (limited to 90 days by Pli
 * Initial release with basic SMS notification functionality
 
 == Upgrade Notice ==
+
+= 3.3 =
+Adds automated release builds and version-bump enforcement via GitHub Actions. No functional changes to SMS sending.
 
 = 3.2 =
 This version adds SMS Tools as the primary SMS gateway with Plivo as an automatic fallback. Requires PHP 8.0 or higher. Configure your SMS Tools credentials under Forms → Settings → Plivo SMS.

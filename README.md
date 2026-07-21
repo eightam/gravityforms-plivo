@@ -25,6 +25,10 @@ This plugin allows you to send SMS notifications when a form is submitted in Gra
 
 ## Changelog
 
+### 3.3 - July 21, 2026
+- Added a GitHub Actions release workflow that builds the distributable plugin zip (including Composer dependencies) and publishes a tagged GitHub Release whenever the plugin version changes
+- Added a version-bump check workflow that requires the version to be increased when plugin source changes
+
 ### 3.2 - July 21, 2026
 - Added SMS Tools (smstools-php-sdk) as the default primary SMS gateway
 - Plivo is now used only as a fallback when SMS Tools sending fails
@@ -83,11 +87,21 @@ GNU General Public License for more details.
 
 This plugin supports automatic updates directly from the GitHub repository. When a new version is released on GitHub, you'll receive update notifications in your WordPress admin dashboard just like any plugin from the WordPress.org repository.
 
-To ensure updates work correctly:
+## Releases & Versioning
 
-1. Make sure your GitHub repository is public
-2. Tag releases using semantic versioning (e.g., v3.0, v3.1)
-3. Include a `readme.txt` file in the repository with version information
+Releases are automated via GitHub Actions:
+
+- **`.github/workflows/release.yml`** runs on every push to `main`. It reads the version from the `Version:` header in `gravityforms-plivo.php` and, if no matching `v<version>` tag exists yet, it installs the Composer dependencies, builds the distributable `gravityforms-plivo.zip` (with `vendor/` bundled so the plugin works out of the box), creates the git tag, and publishes a GitHub Release with the zip attached as a release asset.
+- **`.github/workflows/version-bump-check.yml`** runs on pull requests. If a PR changes plugin source (`*.php` or `composer.*`), it fails unless the `Version:` header has been increased above the version on `main`.
+
+Because releases are version-driven, the rule is simple: **always increase the version number after making changes.** Bumping the version (in the plugin header) is what produces a new tag and release; pushing without a version change is a no-op for the release workflow.
+
+When bumping the version, update it in all of these places:
+
+1. The `Version:` header in `gravityforms-plivo.php`
+2. The `$_version` property in the `GF_Plivo_AddOn` class
+3. The `Stable tag:` line in `readme.txt`
+4. The changelog sections in `README.md` and `readme.txt`
 
 ## Support
 
