@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "7af64210cc445e46e014387ecfa62767",
+    "content-hash": "4c9747fe23ccc715de945db0ab104c87",
     "packages": [
         {
             "name": "firebase/php-jwt",
@@ -655,6 +655,38 @@
                 "source": "https://github.com/ralouphie/getallheaders/tree/develop"
             },
             "time": "2019-03-08T08:55:37+00:00"
+        },
+        {
+            "name": "smstools-api/smstools-php-sdk",
+            "version": "v1.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/Smstools-api/smstools-php-sdk.git",
+                "reference": "c69c8c8f11b816f0af5c0c0dda2cfb5d3a824bdf"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/Smstools-api/smstools-php-sdk/zipball/c69c8c8f11b816f0af5c0c0dda2cfb5d3a824bdf",
+                "reference": "c69c8c8f11b816f0af5c0c0dda2cfb5d3a824bdf",
+                "shasum": ""
+            },
+            "require": {
+                "ext-json": "*",
+                "php": ">=8.0"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Smstools\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "description": "Simple PHP SDK for smstools.be",
+            "support": {
+                "issues": "https://github.com/Smstools-api/smstools-php-sdk/issues",
+                "source": "https://github.com/Smstools-api/smstools-php-sdk/tree/v1.0.0"
+            },
+            "time": "2025-10-30T14:52:31+00:00"
         },
         {
             "name": "symfony/deprecation-contracts",

@@ -1,14 +1,14 @@
 <?php
 /**
  * Plugin Name: Gravity Forms Plivo Add-On
- * Description: Integrate Gravity Forms with Plivo for SMS notifications
- * Version: 3.1
+ * Description: Integrate Gravity Forms with SMS Tools (primary) and Plivo (fallback) for SMS notifications
+ * Version: 3.3
  * Author: 8am GmbH
  * Text Domain: gravityformsplivo
  * GitHub Plugin URI: https://github.com/eightam/gravityforms-plivo
  * Primary Branch: main
  * Requires at least: 5.0
- * Requires PHP: 7.2
+ * Requires PHP: 8.0
  * Update URI: https://github.com/eightam/gravityforms-plivo
  */
 
@@ -55,7 +55,7 @@ add_action('in_plugin_update_message-gravityforms-plivo/gravityforms-plivo.php',
 GFForms::include_feed_addon_framework();
 
 class GF_Plivo_AddOn extends GFFeedAddOn {
-    protected $_version = '3.1';
+    protected $_version = '3.3';
     protected $_min_gravityforms_version = '2.5';
     protected $_slug = 'gravityformsplivo';
     protected $_path = 'gravityformsplivo/plivo.php';
@@ -147,33 +147,109 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
     public function plugin_settings_fields() {
         return array(
             array(
-                'title'  => esc_html__('Plivo Account Settings', 'gravityformsplivo'),
-                'fields' => array(
+                'title'       => esc_html__('SMS Tools Account Settings (Primary Gateway)', 'gravityformsplivo'),
+                'description' => esc_html__('SMS Tools is used as the default gateway for sending SMS. Plivo is only used as a fallback if sending via SMS Tools fails.', 'gravityformsplivo'),
+                'fields'      => array(
+                    array(
+                        'name'     => 'smstools_client_id',
+                        'label'    => esc_html__('Client ID', 'gravityformsplivo'),
+                        'type'     => 'text',
+                        'class'    => 'medium',
+                        'required' => true,
+                        'tooltip'  => esc_html__('Your SMS Tools API Client ID (sent as the X-Client-Id header).', 'gravityformsplivo'),
+                    ),
+                    array(
+                        'name'     => 'smstools_client_secret',
+                        'label'    => esc_html__('Client Secret', 'gravityformsplivo'),
+                        'type'     => 'text',
+                        'class'    => 'medium',
+                        'required' => true,
+                        'tooltip'  => esc_html__('Your SMS Tools API Client Secret (sent as the X-Client-Secret header).', 'gravityformsplivo'),
+                    ),
+                    array(
+                        'name'     => 'smstools_sender',
+                        'label'    => esc_html__('Default Sender ID', 'gravityformsplivo'),
+                        'type'     => 'text',
+                        'class'    => 'medium',
+                        'required' => true,
+                        'tooltip'  => esc_html__('The sender name or number shown to recipients.', 'gravityformsplivo'),
+                    ),
+                    array(
+                        'name'          => 'smstools_base_url',
+                        'label'         => esc_html__('API Base URL', 'gravityformsplivo'),
+                        'type'          => 'text',
+                        'class'         => 'medium',
+                        'required'      => false,
+                        'default_value' => 'https://api.smstools.com/v1/',
+                        'tooltip'       => esc_html__('Optional. Leave as the default unless SMS Tools provides a different endpoint.', 'gravityformsplivo'),
+                    ),
+                ),
+            ),
+            array(
+                'title'       => esc_html__('Plivo Account Settings (Fallback)', 'gravityformsplivo'),
+                'description' => esc_html__('These credentials are only used if sending via SMS Tools fails. Leave empty if you do not want a fallback gateway.', 'gravityformsplivo'),
+                'fields'      => array(
                     array(
                         'name'     => 'auth_id',
                         'label'    => esc_html__('Auth ID', 'gravityformsplivo'),
                         'type'     => 'text',
                         'class'    => 'medium',
-                        'required' => true,
+                        'required' => false,
                     ),
                     array(
                         'name'     => 'auth_token',
                         'label'    => esc_html__('Auth Token', 'gravityformsplivo'),
                         'type'     => 'text',
                         'class'    => 'medium',
-                        'required' => true,
+                        'required' => false,
                     ),
                     array(
                         'name'     => 'sender_id',
                         'label'    => esc_html__('Default Sender ID', 'gravityformsplivo'),
                         'type'     => 'text',
                         'class'    => 'medium',
-                        'required' => true,
+                        'required' => false,
                         'tooltip'  => esc_html__('Your registered Plivo Sender ID', 'gravityformsplivo'),
                     ),
                 ),
             ),
         );
+    }
+
+    /**
+     * Get the configured SMS Tools settings.
+     *
+     * @return array
+     */
+    private function get_smstools_settings() {
+        $base_url = $this->get_plugin_setting('smstools_base_url');
+        return array(
+            'client_id'     => $this->get_plugin_setting('smstools_client_id'),
+            'client_secret' => $this->get_plugin_setting('smstools_client_secret'),
+            'sender'        => $this->get_plugin_setting('smstools_sender'),
+            'base_url'      => !empty($base_url) ? $base_url : 'https://api.smstools.com/v1/',
+        );
+    }
+
+    /**
+     * Whether the SMS Tools (primary) gateway is fully configured.
+     *
+     * @return bool
+     */
+    private function is_smstools_configured() {
+        $settings = $this->get_smstools_settings();
+        return !empty($settings['client_id']) && !empty($settings['client_secret']) && !empty($settings['sender']);
+    }
+
+    /**
+     * Whether the Plivo (fallback) gateway is fully configured.
+     *
+     * @return bool
+     */
+    private function is_plivo_configured() {
+        return !empty($this->get_plugin_setting('auth_id'))
+            && !empty($this->get_plugin_setting('auth_token'))
+            && !empty($this->get_plugin_setting('sender_id'));
     }
 
     /**
@@ -205,8 +281,9 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
      * @return bool
      */
     public function can_create_feed() {
-        $settings = $this->get_plugin_settings();
-        return !empty($settings['auth_id']) && !empty($settings['auth_token']) && !empty($settings['sender_id']);
+        // A feed can be created as long as at least one gateway (SMS Tools primary
+        // or Plivo fallback) is fully configured.
+        return $this->is_smstools_configured() || $this->is_plivo_configured();
     }
     
     /**
@@ -447,6 +524,7 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
             message text NOT NULL,
             message_uuid varchar(255) NOT NULL,
             status varchar(50) NOT NULL,
+            gateway varchar(20) NOT NULL DEFAULT '',
             date_created datetime NOT NULL,
             PRIMARY KEY (id),
             KEY form_id (form_id),
@@ -454,7 +532,7 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
             KEY message_uuid (message_uuid),
             KEY date_created (date_created)
         ) $charset_collate;";
-        
+
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
         
@@ -485,6 +563,12 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
                 }
             }
             
+            // Add the gateway column if it is missing (introduced in 3.2)
+            if (!in_array('gateway', $column_names)) {
+                error_log('Plivo Add-On: Activation - Adding missing gateway column');
+                $wpdb->query("ALTER TABLE $table_name ADD COLUMN gateway varchar(20) NOT NULL DEFAULT '' AFTER status");
+            }
+
             // Check column sizes and update if needed
             $column_info = $wpdb->get_row("SHOW COLUMNS FROM $table_name LIKE 'to_number'");
             if ($column_info && strpos($column_info->Type, 'varchar(50)') !== false) {
@@ -657,6 +741,7 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
                         'message' => $message->message,
                         'message_uuid' => $message->message_uuid,
                         'status' => $message->status,
+                        'gateway' => 'plivo',
                         'date_created' => date('Y-m-d H:i:s', strtotime($message->created_time))
                     ]
                 );
@@ -696,11 +781,12 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
      * @param int $feed_id Feed ID
      * @param string $to_number Recipient number
      * @param string $message Message content
-     * @param string $message_uuid Plivo message UUID
+     * @param string $message_uuid Message UUID/ID returned by the gateway
      * @param string $status Message status
+     * @param string $gateway Gateway used to send the message (e.g. 'smstools', 'plivo')
      * @return bool Success or failure
      */
-    public function track_sms_message($form_id, $entry_id, $feed_id, $to_number, $message, $message_uuid, $status) {
+    public function track_sms_message($form_id, $entry_id, $feed_id, $to_number, $message, $message_uuid, $status, $gateway = '') {
         global $wpdb;
         
         $this->log_debug(__METHOD__ . '(): Tracking SMS message in database.');
@@ -725,6 +811,7 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
                 message text NOT NULL,
                 message_uuid varchar(255) NOT NULL,
                 status varchar(50) NOT NULL,
+                gateway varchar(20) NOT NULL DEFAULT '',
                 date_created datetime NOT NULL,
                 PRIMARY KEY (id),
                 KEY form_id (form_id),
@@ -732,7 +819,7 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
                 KEY message_uuid (message_uuid),
                 KEY date_created (date_created)
             ) $charset_collate;";
-            
+
             // Use dbDelta for proper table creation
             require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
             dbDelta($sql);
@@ -784,6 +871,12 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
                     return false;
                 }
             }
+
+            // Ensure the gateway column exists (introduced in 3.2)
+            if (!in_array('gateway', $column_names)) {
+                $this->log_debug(__METHOD__ . '(): Adding missing gateway column');
+                $wpdb->query("ALTER TABLE $table_name ADD COLUMN gateway varchar(20) NOT NULL DEFAULT '' AFTER status");
+            }
         }
         
         // Check for duplicate message
@@ -802,6 +895,7 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
                 $table_name,
                 array(
                     'status' => $status,
+                    'gateway' => $gateway,
                     'date_created' => current_time('mysql')
                 ),
                 array('id' => $existing_message)
@@ -826,6 +920,7 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
                     'message' => $message,
                     'message_uuid' => $message_uuid,
                     'status' => $status,
+                    'gateway' => $gateway,
                     'date_created' => current_time('mysql')
                 )
             );
@@ -845,7 +940,10 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
     }
     
     /**
-     * Process feed and send SMS
+     * Process feed and send SMS.
+     *
+     * SMS Tools is used as the primary gateway. If it is not configured or the
+     * send fails, the message is sent via Plivo as a fallback.
      *
      * @param array $feed The feed to process
      * @param array $entry The entry being processed
@@ -855,33 +953,133 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
      */
     public function process_feed($feed, $entry, $form, $is_resend = false) {
         $this->log_debug(__METHOD__ . '(): Processing feed. Is resend: ' . ($is_resend ? 'Yes' : 'No'));
-        
+
         // Get feed data
         $receiver_number = rgars($feed, 'meta/receiverNumber');
         $message_template = rgars($feed, 'meta/messageTemplate');
-        
+
         // Get message with HTML filtered from merge tags
         $message = $this->get_message_with_filtered_merge_tags($message_template, $form, $entry);
-        
-        // Get Plivo API credentials
-        $auth_id = $this->get_plugin_setting('auth_id');
-        $auth_token = $this->get_plugin_setting('auth_token');
-        $sender_id = $this->get_plugin_setting('sender_id');
-        
-        if (empty($auth_id) || empty($auth_token) || empty($sender_id)) {
+
+        $smstools_configured = $this->is_smstools_configured();
+        $plivo_configured    = $this->is_plivo_configured();
+
+        if (!$smstools_configured && !$plivo_configured) {
             $this->add_note_to_entry(
-                $entry['id'], 
+                $entry['id'],
                 __('SMS Sending Failed', 'gravityformsplivo'),
                 array(
                     'to' => $receiver_number,
                     'message' => $message,
-                    'error' => __('Plivo API credentials not configured.', 'gravityformsplivo')
+                    'error' => __('No SMS gateway configured. Please configure SMS Tools (primary) or Plivo (fallback) credentials.', 'gravityformsplivo')
                 ),
                 'error'
             );
             return false;
         }
-        
+
+        $errors = array();
+
+        // Primary gateway: SMS Tools.
+        if ($smstools_configured) {
+            try {
+                $message_uuid = $this->send_via_smstools($receiver_number, $message);
+                $this->handle_send_success('smstools', $feed, $entry, $form, $receiver_number, $message, $message_uuid, $is_resend, false);
+                return true;
+            } catch (Exception $e) {
+                $this->log_debug(__METHOD__ . '(): SMS Tools send failed: ' . $e->getMessage());
+                error_log('Plivo Add-On: SMS Tools send failed: ' . $e->getMessage());
+                $errors['SMS Tools'] = $e->getMessage();
+            }
+        }
+
+        // Fallback gateway: Plivo.
+        if ($plivo_configured) {
+            // It is only a "fallback" if SMS Tools was actually attempted first.
+            $used_as_fallback = $smstools_configured;
+            try {
+                $message_uuid = $this->send_via_plivo($receiver_number, $message);
+                $this->handle_send_success('plivo', $feed, $entry, $form, $receiver_number, $message, $message_uuid, $is_resend, $used_as_fallback);
+                return true;
+            } catch (Exception $e) {
+                $this->log_debug(__METHOD__ . '(): Plivo send failed: ' . $e->getMessage());
+                error_log('Plivo Add-On: Plivo send failed: ' . $e->getMessage());
+                $errors['Plivo'] = $e->getMessage();
+            }
+        }
+
+        // All configured gateways failed.
+        $error_messages = array();
+        foreach ($errors as $gateway_label => $error) {
+            $error_messages[] = $gateway_label . ': ' . $error;
+        }
+
+        $this->add_note_to_entry(
+            $entry['id'],
+            __('SMS Sending Failed', 'gravityformsplivo'),
+            array(
+                'to' => $receiver_number,
+                'message' => $message,
+                'error' => implode(' | ', $error_messages)
+            ),
+            'error'
+        );
+
+        return false;
+    }
+
+    /**
+     * Send an SMS via the SMS Tools gateway (primary).
+     *
+     * @param string $receiver_number Recipient number in E.164 format
+     * @param string $message Message body
+     * @return string The message ID returned by SMS Tools
+     * @throws Exception When the gateway is not configured or the send fails
+     */
+    private function send_via_smstools($receiver_number, $message) {
+        $settings = $this->get_smstools_settings();
+
+        if (empty($settings['client_id']) || empty($settings['client_secret']) || empty($settings['sender'])) {
+            throw new Exception(__('SMS Tools credentials not configured.', 'gravityformsplivo'));
+        }
+
+        if (!class_exists('\\Smstools\\Client')) {
+            $autoloader = dirname(__FILE__) . '/vendor/autoload.php';
+            if (file_exists($autoloader)) {
+                require_once($autoloader);
+            }
+        }
+
+        if (!class_exists('\\Smstools\\Client')) {
+            throw new Exception(__('SMS Tools SDK not found. Please run "composer install" for the plugin.', 'gravityformsplivo'));
+        }
+
+        $client = new \Smstools\Client($settings['client_id'], $settings['client_secret'], $settings['base_url']);
+
+        $response = $client->sms()->send($receiver_number, $message, $settings['sender']);
+
+        $this->log_debug(__METHOD__ . '(): SMS Tools response: ' . print_r($response, true));
+
+        return $this->extract_smstools_message_id($response);
+    }
+
+    /**
+     * Send an SMS via the Plivo gateway (fallback).
+     *
+     * @param string $receiver_number Recipient number in E.164 format
+     * @param string $message Message body
+     * @return string The Plivo message UUID
+     * @throws Exception When the gateway is not configured or the send fails
+     */
+    private function send_via_plivo($receiver_number, $message) {
+        $auth_id    = $this->get_plugin_setting('auth_id');
+        $auth_token = $this->get_plugin_setting('auth_token');
+        $sender_id  = $this->get_plugin_setting('sender_id');
+
+        if (empty($auth_id) || empty($auth_token) || empty($sender_id)) {
+            throw new Exception(__('Plivo API credentials not configured.', 'gravityformsplivo'));
+        }
+
         // Initialize Plivo client
         if (!class_exists('\\Plivo\\RestClient')) {
             // Try to load via Composer autoloader first
@@ -894,72 +1092,102 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
                 require_once(dirname(__FILE__) . '/vendor/plivo/plivo-php/src/Plivo/RestClient.php');
             }
         }
-        
-        try {
-            $client = new \Plivo\RestClient($auth_id, $auth_token);
-            
-            // Send SMS
-            $response = $client->messages->create(
-                $sender_id,
-                array($receiver_number),
-                $message
-            );
-            
-            // Debug response
-            $this->log_debug(__METHOD__ . '(): SMS sent successfully. Response: ' . print_r($response, true));
-            
-            // Get message UUID
-            $message_uuid = $response->getMessageUuid()[0];
-            $this->log_debug(__METHOD__ . '(): Message UUID: ' . $message_uuid);
-            
-            // Ensure database tracking works
-            $tracking_result = false;
-            
-            // Track the message in database with appropriate status
-            if ($is_resend) {
-                $this->log_debug(__METHOD__ . '(): This is a resend. Tracking with status "resent"');
-                $tracking_result = $this->track_sms_message($form['id'], $entry['id'], $feed['id'], $receiver_number, $message, $message_uuid, 'resent');
-            } else {
-                $this->log_debug(__METHOD__ . '(): This is a new send. Tracking with status "sent"');
-                $tracking_result = $this->track_sms_message($form['id'], $entry['id'], $feed['id'], $receiver_number, $message, $message_uuid, 'sent');
+
+        $client = new \Plivo\RestClient($auth_id, $auth_token);
+
+        $response = $client->messages->create(
+            $sender_id,
+            array($receiver_number),
+            $message
+        );
+
+        $this->log_debug(__METHOD__ . '(): Plivo response: ' . print_r($response, true));
+
+        return $response->getMessageUuid()[0];
+    }
+
+    /**
+     * Extract a message identifier from the SMS Tools API response.
+     *
+     * The response shape is not strictly documented, so we look for the most
+     * common identifier keys and fall back to a generated unique ID so that
+     * message tracking always has a non-empty, unique value to work with.
+     *
+     * @param mixed $response Decoded SMS Tools API response
+     * @return string
+     */
+    private function extract_smstools_message_id($response) {
+        if (is_array($response)) {
+            foreach (array('id', 'message_id', 'messageId', 'uuid', 'message_uuid', 'reference') as $key) {
+                if (!empty($response[$key]) && is_scalar($response[$key])) {
+                    return (string) $response[$key];
+                }
             }
-            
-            if (!$tracking_result) {
-                $this->log_debug(__METHOD__ . '(): WARNING - Failed to track SMS in database. Check error logs for details.');
-                error_log('Plivo Add-On: Failed to track SMS in database. Message UUID: ' . $message_uuid);
+
+            if (!empty($response['data']) && is_array($response['data'])) {
+                return $this->extract_smstools_message_id($response['data']);
             }
-            
-            // Add note to entry
-            $this->add_note_to_entry(
-                $entry['id'], 
-                $is_resend ? __('SMS Resent', 'gravityformsplivo') : __('SMS Sent', 'gravityformsplivo'),
-                array(
-                    'to' => $receiver_number,
-                    'message' => $message,
-                    'uuid' => $message_uuid
-                )
-            );
-            
-            return true;
-            
-        } catch (Exception $e) {
-            $this->log_debug(__METHOD__ . '(): ERROR sending SMS: ' . $e->getMessage());
-            error_log('Plivo Add-On: Error sending SMS: ' . $e->getMessage());
-            
-            // Add note to entry
-            $this->add_note_to_entry(
-                $entry['id'], 
-                __('SMS Sending Failed', 'gravityformsplivo'),
-                array(
-                    'to' => $receiver_number,
-                    'message' => $message,
-                    'error' => $e->getMessage()
-                ),
-                'error'
-            );
-            
-            return false;
         }
+
+        return 'smstools-' . uniqid('', true);
+    }
+
+    /**
+     * Persist and annotate a successful send.
+     *
+     * @param string $gateway The gateway used ('smstools' or 'plivo')
+     * @param array $feed The feed processed
+     * @param array $entry The entry processed
+     * @param array $form The form processed
+     * @param string $receiver_number Recipient number
+     * @param string $message Message body
+     * @param string $message_uuid Gateway message identifier
+     * @param bool $is_resend Whether this was a resend
+     * @param bool $used_as_fallback Whether Plivo was used after SMS Tools failed
+     */
+    private function handle_send_success($gateway, $feed, $entry, $form, $receiver_number, $message, $message_uuid, $is_resend, $used_as_fallback) {
+        $this->log_debug(__METHOD__ . sprintf('(): SMS sent via %s. UUID: %s', $gateway, $message_uuid));
+
+        $status = $is_resend ? 'resent' : 'sent';
+
+        $tracking_result = $this->track_sms_message(
+            $form['id'],
+            $entry['id'],
+            $feed['id'],
+            $receiver_number,
+            $message,
+            $message_uuid,
+            $status,
+            $gateway
+        );
+
+        if (!$tracking_result) {
+            $this->log_debug(__METHOD__ . '(): WARNING - Failed to track SMS in database. Check error logs for details.');
+            error_log('Plivo Add-On: Failed to track SMS in database. Message UUID: ' . $message_uuid);
+        }
+
+        $gateway_label = ($gateway === 'smstools')
+            ? __('SMS Tools', 'gravityformsplivo')
+            : __('Plivo', 'gravityformsplivo');
+
+        $title = $is_resend
+            ? __('SMS Resent', 'gravityformsplivo')
+            : __('SMS Sent', 'gravityformsplivo');
+
+        if ($used_as_fallback) {
+            $title .= ' ' . __('(via Plivo fallback)', 'gravityformsplivo');
+        }
+
+        $this->add_note_to_entry(
+            $entry['id'],
+            $title,
+            array(
+                'to' => $receiver_number,
+                'message' => $message,
+                'uuid' => $message_uuid,
+                'gateway' => $gateway_label
+            )
+        );
     }
     
     /**
@@ -1029,6 +1257,9 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
         $note = $note_title . "\n\n";
         if (!empty($details['to'])) {
             $note .= __('To:', 'gravityformsplivo') . ' ' . $details['to'] . "\n";
+        }
+        if (!empty($details['gateway'])) {
+            $note .= __('Gateway:', 'gravityformsplivo') . ' ' . $details['gateway'] . "\n";
         }
         if (!empty($details['message'])) {
             $note .= __('Message:', 'gravityformsplivo') . ' ' . $details['message'] . "\n";

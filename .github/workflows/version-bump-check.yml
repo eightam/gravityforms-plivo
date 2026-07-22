@@ -1,0 +1,61 @@
+name: Version Bump Check
+
+# Enforces the "always increase the version number after changes" policy.
+# When a pull request changes plugin source (PHP or Composer files), the
+# Version header in gravityforms-plivo.php must be greater than the version
+# on the base branch. Documentation- and CI-only changes are exempt.
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  version-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify the plugin version was increased
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+
+          git fetch --no-tags origin "$BASE_REF"
+
+          CHANGED=$(git diff --name-only "origin/$BASE_REF...HEAD")
+          printf 'Changed files:\n%s\n\n' "$CHANGED"
+
+          if ! printf '%s\n' "$CHANGED" | grep -qE '(\.php$|(^|/)composer\.(json|lock)$)'; then
+            echo "No plugin source changes detected; version bump not required."
+            exit 0
+          fi
+
+          read_version() { grep -oiP '^\s*\*\s*Version:\s*\K[0-9][0-9.]*' | head -1; }
+
+          NEW_VERSION=$(read_version < gravityforms-plivo.php)
+          OLD_VERSION=$(git show "origin/$BASE_REF:gravityforms-plivo.php" | read_version || true)
+
+          echo "Base version: ${OLD_VERSION:-<none>} | PR version: ${NEW_VERSION:-<none>}"
+
+          if [ -z "${NEW_VERSION:-}" ]; then
+            echo "::error::Could not read the plugin version from gravityforms-plivo.php."
+            exit 1
+          fi
+
+          if [ "$NEW_VERSION" = "${OLD_VERSION:-}" ]; then
+            echo "::error::Plugin source changed but the version (still $NEW_VERSION) was not increased. Please bump the Version header in gravityforms-plivo.php."
+            exit 1
+          fi
+
+          HIGHEST=$(printf '%s\n%s\n' "${OLD_VERSION:-0}" "$NEW_VERSION" | sort -V | tail -1)
+          if [ "$HIGHEST" != "$NEW_VERSION" ]; then
+            echo "::error::New version ($NEW_VERSION) must be greater than the base version ($OLD_VERSION)."
+            exit 1
+          fi
+
+          echo "Version bump OK: ${OLD_VERSION:-<none>} -> $NEW_VERSION"
