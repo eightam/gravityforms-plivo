@@ -36,7 +36,7 @@ Each feed can send via SMS or post to a Telegram group instead.
 
 Telegram messages are tracked alongside SMS (gateway `telegram`) but excluded from the dashboard's cost figures.
 
-Other plugins can change the `sendMessage` parameters with the `gf_plivo_telegram_message_params` filter (`$params, $feed, $entry, $form`), e.g. to add an inline keyboard. [Gravity Forms Entry Telegram Mini App](https://github.com/eightam/gravityforms-entry-telegram-miniapp) uses it to add a "Details öffnen" button that opens the entry in a Telegram Mini App. If Telegram rejects a message with `reply_markup`, it is sent again without it.
+Other plugins can add `sendMessage` parameters with the `gf_plivo_telegram_message_params` filter (`$params, $feed, $entry, $form`), e.g. an inline keyboard. `chat_id` and `text` cannot be changed. [Gravity Forms Entry Telegram Mini App](https://github.com/eightam/gravityforms-entry-telegram-miniapp) uses it to add a "Details öffnen" button that opens the entry in a Telegram Mini App. If Telegram rejects a message with `reply_markup`, it is sent again without it.
 
 ## Changelog
 

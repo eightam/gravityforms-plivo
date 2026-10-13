@@ -1277,7 +1277,8 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
          * Filters the parameters sent to the Telegram Bot API sendMessage method.
          *
          * Used by the Gravity Forms Entry Telegram Mini App plugin to add an
-         * inline "Details öffnen" button (reply_markup).
+         * inline "Details öffnen" button (reply_markup). chat_id and text cannot
+         * be changed, so tracking and entry notes match what was sent.
          *
          * @param array $params sendMessage parameters
          * @param array $feed The feed being processed
@@ -1286,7 +1287,7 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
          */
         $filtered = apply_filters('gf_plivo_telegram_message_params', $params, $feed, $entry, $form);
         if (is_array($filtered)) {
-            $params = array_merge($params, $filtered);
+            $params = array_merge($filtered, $params);
         }
 
         $body = $this->telegram_send_message($bot_token, $params);
