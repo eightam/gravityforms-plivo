@@ -2,9 +2,12 @@ name: Build and Release
 
 # Builds the distributable plugin zip (including Composer dependencies) and
 # publishes a GitHub Release whenever the plugin version in the header changes.
-# The release is version-driven: if a tag matching the current version already
-# exists, the job is a no-op. This pairs with the "always increase the version
-# number after changes" policy — bump the version, get a release.
+# The release is version-driven: if the release for the current version already
+# has the plugin zip attached, the job is a no-op. If the tag or release exists
+# without the zip (e.g. a release created by hand, or an earlier failed build),
+# the zip is built from the tagged commit and attached to that release.
+# This pairs with the "always increase the version number after changes"
+# policy — bump the version, get a release.
 
 on:
   push:
@@ -39,16 +42,26 @@ jobs:
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
           echo "Detected plugin version: $VERSION (tag v$VERSION)"
 
-      - name: Check whether the tag already exists
+      - name: Check whether the release zip already exists
         id: tagcheck
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
-          if git ls-remote --exit-code --tags origin "refs/tags/${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
+          ASSETS=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null || true)
+          if grep -qx 'gravityforms-plivo.zip' <<< "$ASSETS"; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Tag ${{ steps.version.outputs.tag }} already exists; nothing to release."
+            echo "Release $TAG already has gravityforms-plivo.zip; nothing to release."
+            exit 0
+          fi
+          echo "exists=false" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG exists without the release zip; building it from the tagged commit."
+            git fetch --no-tags --depth=1 origin "refs/tags/$TAG:refs/tags/$TAG"
+            git checkout --detach "$TAG"
           else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "Tag ${{ steps.version.outputs.tag }} does not exist; a release will be built."
+            echo "Tag $TAG does not exist; a release will be built."
           fi
 
       - name: Set up PHP
@@ -78,8 +91,17 @@ jobs:
             --exclude '.distignore' \
             --exclude '*.log'
           ( cd build && zip -rq "${PLUGIN_SLUG}.zip" "${PLUGIN_SLUG}" )
-          echo "Built build/${PLUGIN_SLUG}.zip:"
-          unzip -l "build/${PLUGIN_SLUG}.zip" | tail -n +2 | head -n 20
+
+          # List into a file rather than piping into head/grep -q, which would
+          # SIGPIPE unzip and fail the step under pipefail.
+          unzip -Z1 "build/${PLUGIN_SLUG}.zip" > build/contents.txt
+          for required in gravityforms-plivo.php vendor/autoload.php; do
+            if ! grep -qx "${PLUGIN_SLUG}/${required}" build/contents.txt; then
+              echo "::error::${required} is missing from the release zip."
+              exit 1
+            fi
+          done
+          echo "Built build/${PLUGIN_SLUG}.zip ($(wc -l < build/contents.txt) entries, $(du -h "build/${PLUGIN_SLUG}.zip" | cut -f1))"
 
       - name: Create GitHub Release
         if: steps.tagcheck.outputs.exists == 'false'
