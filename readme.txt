@@ -3,7 +3,7 @@ Contributors: 8amgmbh
 Tags: gravity forms, sms tools, plivo, sms, notifications
 Requires at least: 5.0
 Tested up to: 6.4
-Stable tag: 3.4
+Stable tag: 3.5
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -47,6 +47,14 @@ The plugin imports historical messages from Plivo API (limited to 90 days by Pli
 
 == Changelog ==
 
+= 3.5 =
+* Fixed the release build: Composer dependencies are now locked for PHP 8.0 (the 3.3 and 3.4 release builds failed, so they shipped without the bundled `vendor/` folder)
+* Updated Guzzle, guzzlehttp/psr7, firebase/php-jwt and plivo-php to versions without known security advisories
+* If SMS Tools fails with any PHP error (not just exceptions), Plivo is still tried as the fallback; the same applies to Telegram failures being recorded on the entry
+* A missing `vendor/` folder no longer causes a fatal error when sending via Plivo; the failure is recorded as an entry note instead
+* Messages stored before 3.2 are now labelled with the `plivo` gateway instead of being left blank
+* The SMS Tools message ID is also read from responses that nest it under `message` or `result`
+
 = 3.4 =
 * Added Telegram as a per-feed channel: each feed can now send via SMS or post to a Telegram group through a bot
 * Added Telegram Bot Settings (bot token) and a Telegram Chat ID field on feeds
@@ -86,6 +94,9 @@ The plugin imports historical messages from Plivo API (limited to 90 days by Pli
 * Initial release with basic SMS notification functionality
 
 == Upgrade Notice ==
+
+= 3.5 =
+Fixes the release package, which was missing its bundled dependencies in 3.3 and 3.4 (SMS Tools and Plivo sending could fail). Also includes security updates for bundled libraries. Recommended for all users.
 
 = 3.4 =
 Adds Telegram as an alternative to SMS. Existing feeds keep sending SMS; switch a feed to Telegram under its settings after adding a bot token.

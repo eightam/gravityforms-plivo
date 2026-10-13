@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Gravity Forms Plivo Add-On
  * Description: Integrate Gravity Forms with SMS Tools (primary) and Plivo (fallback) for SMS notifications, or send to Telegram groups
- * Version: 3.4
+ * Version: 3.5
  * Author: 8am GmbH
  * Text Domain: gravityformsplivo
  * GitHub Plugin URI: https://github.com/eightam/gravityforms-plivo
@@ -55,7 +55,7 @@ add_action('in_plugin_update_message-gravityforms-plivo/gravityforms-plivo.php',
 GFForms::include_feed_addon_framework();
 
 class GF_Plivo_AddOn extends GFFeedAddOn {
-    protected $_version = '3.4';
+    protected $_version = '3.5';
     protected $_min_gravityforms_version = '2.5';
     protected $_slug = 'gravityformsplivo';
     protected $_path = 'gravityformsplivo/plivo.php';
@@ -581,6 +581,44 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
     }
     
     /**
+     * Add the gateway column to the messages table.
+     *
+     * Every message stored before the column existed (pre 3.2) was sent via Plivo,
+     * so those rows are backfilled as 'plivo'.
+     *
+     * @param string $table_name Messages table name
+     */
+    private static function add_gateway_column($table_name) {
+        global $wpdb;
+
+        $wpdb->query("ALTER TABLE $table_name ADD COLUMN gateway varchar(20) NOT NULL DEFAULT '' AFTER status");
+        $wpdb->query("UPDATE $table_name SET gateway = 'plivo' WHERE gateway = ''");
+    }
+
+    /**
+     * Runs when the add-on version changes (including auto-updates, which do not
+     * trigger the activation hook).
+     *
+     * @param string $previous_version The previously installed version
+     */
+    public function upgrade($previous_version) {
+        global $wpdb;
+
+        $table_name = $wpdb->prefix . 'gf_plivo_messages';
+
+        if ($wpdb->get_var("SHOW TABLES LIKE '$table_name'") !== $table_name) {
+            return;
+        }
+
+        if ($wpdb->get_var("SHOW COLUMNS FROM $table_name LIKE 'gateway'") !== 'gateway') {
+            self::add_gateway_column($table_name);
+        } else {
+            // 3.2 - 3.4 added the column with an empty default for existing rows
+            $wpdb->query("UPDATE $table_name SET gateway = 'plivo' WHERE gateway = ''");
+        }
+    }
+
+    /**
      * Plugin activation handler
      * 
      * Creates the database table for storing SMS messages
@@ -644,7 +682,7 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
             // Add the gateway column if it is missing (introduced in 3.2)
             if (!in_array('gateway', $column_names)) {
                 error_log('Plivo Add-On: Activation - Adding missing gateway column');
-                $wpdb->query("ALTER TABLE $table_name ADD COLUMN gateway varchar(20) NOT NULL DEFAULT '' AFTER status");
+                self::add_gateway_column($table_name);
             }
 
             // Check column sizes and update if needed
@@ -953,7 +991,7 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
             // Ensure the gateway column exists (introduced in 3.2)
             if (!in_array('gateway', $column_names)) {
                 $this->log_debug(__METHOD__ . '(): Adding missing gateway column');
-                $wpdb->query("ALTER TABLE $table_name ADD COLUMN gateway varchar(20) NOT NULL DEFAULT '' AFTER status");
+                self::add_gateway_column($table_name);
             }
         }
         
@@ -1045,7 +1083,7 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
                 $message_uuid = $this->send_via_telegram($receiver_number, $message);
                 $this->handle_send_success('telegram', $feed, $entry, $form, $receiver_number, $message, $message_uuid, $is_resend, false);
                 return true;
-            } catch (Exception $e) {
+            } catch (\Throwable $e) {
                 $this->log_debug(__METHOD__ . '(): Telegram send failed: ' . $e->getMessage());
                 error_log('Plivo Add-On: Telegram send failed: ' . $e->getMessage());
 
@@ -1088,7 +1126,7 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
                 $message_uuid = $this->send_via_smstools($receiver_number, $message);
                 $this->handle_send_success('smstools', $feed, $entry, $form, $receiver_number, $message, $message_uuid, $is_resend, false);
                 return true;
-            } catch (Exception $e) {
+            } catch (\Throwable $e) {
                 $this->log_debug(__METHOD__ . '(): SMS Tools send failed: ' . $e->getMessage());
                 error_log('Plivo Add-On: SMS Tools send failed: ' . $e->getMessage());
                 $errors['SMS Tools'] = $e->getMessage();
@@ -1103,7 +1141,7 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
                 $message_uuid = $this->send_via_plivo($receiver_number, $message);
                 $this->handle_send_success('plivo', $feed, $entry, $form, $receiver_number, $message, $message_uuid, $is_resend, $used_as_fallback);
                 return true;
-            } catch (Exception $e) {
+            } catch (\Throwable $e) {
                 $this->log_debug(__METHOD__ . '(): Plivo send failed: ' . $e->getMessage());
                 error_log('Plivo Add-On: Plivo send failed: ' . $e->getMessage());
                 $errors['Plivo'] = $e->getMessage();
@@ -1184,15 +1222,15 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
 
         // Initialize Plivo client
         if (!class_exists('\\Plivo\\RestClient')) {
-            // Try to load via Composer autoloader first
             $autoloader = dirname(__FILE__) . '/vendor/autoload.php';
             if (file_exists($autoloader)) {
                 require_once($autoloader);
-            } else {
-                // Fallback to direct file includes if autoloader is not available
-                require_once(dirname(__FILE__) . '/vendor/plivo/plivo-php/src/Plivo/BaseClient.php');
-                require_once(dirname(__FILE__) . '/vendor/plivo/plivo-php/src/Plivo/RestClient.php');
             }
+        }
+
+        // A missing vendor/ directory must not fatal the form submission
+        if (!class_exists('\\Plivo\\RestClient')) {
+            throw new Exception(__('Plivo SDK not found. Please run "composer install" for the plugin.', 'gravityformsplivo'));
         }
 
         $client = new \Plivo\RestClient($auth_id, $auth_token);
@@ -1266,19 +1304,41 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
      * @return string
      */
     private function extract_smstools_message_id($response) {
-        if (is_array($response)) {
-            foreach (array('id', 'message_id', 'messageId', 'uuid', 'message_uuid', 'reference') as $key) {
-                if (!empty($response[$key]) && is_scalar($response[$key])) {
-                    return (string) $response[$key];
-                }
-            }
+        $id = $this->find_smstools_message_id($response);
 
-            if (!empty($response['data']) && is_array($response['data'])) {
-                return $this->extract_smstools_message_id($response['data']);
+        return $id !== null ? $id : 'smstools-' . uniqid('', true);
+    }
+
+    /**
+     * Search a decoded SMS Tools response for a message identifier.
+     *
+     * Checks the top level first, then payloads nested under "data", "message"
+     * or "result".
+     *
+     * @param mixed $response Decoded SMS Tools API response (or a nested part of it)
+     * @return string|null
+     */
+    private function find_smstools_message_id($response) {
+        if (!is_array($response)) {
+            return null;
+        }
+
+        foreach (array('id', 'message_id', 'messageId', 'uuid', 'message_uuid', 'reference') as $key) {
+            if (!empty($response[$key]) && is_scalar($response[$key])) {
+                return (string) $response[$key];
             }
         }
 
-        return 'smstools-' . uniqid('', true);
+        foreach (array('data', 'message', 'result') as $wrapper) {
+            if (!empty($response[$wrapper]) && is_array($response[$wrapper])) {
+                $id = $this->find_smstools_message_id($response[$wrapper]);
+                if ($id !== null) {
+                    return $id;
+                }
+            }
+        }
+
+        return null;
     }
 
     /**
