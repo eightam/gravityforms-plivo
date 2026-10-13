@@ -3,7 +3,7 @@ Contributors: 8amgmbh
 Tags: gravity forms, sms tools, plivo, sms, notifications
 Requires at least: 5.0
 Tested up to: 6.4
-Stable tag: 3.3
+Stable tag: 3.4
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -22,6 +22,7 @@ This plugin allows you to send SMS notifications when a form is submitted in Gra
 * Preview SMS messages in the entry view
 * Track SMS message history and statistics (including which gateway was used)
 * Resend SMS messages directly from the entry view
+* Send to a Telegram group instead of SMS, per feed
 * Automatic updates via GitHub repository
 
 == Installation ==
@@ -45,6 +46,13 @@ Yes, you can create multiple feeds with different conditions to send SMS to diff
 The plugin imports historical messages from Plivo API (limited to 90 days by Plivo's API). All new messages sent after installation are tracked indefinitely in the local database.
 
 == Changelog ==
+
+= 3.4 =
+* Added Telegram as a per-feed channel: each feed can now send via SMS or post to a Telegram group through a bot
+* Added Telegram Bot Settings (bot token) and a Telegram Chat ID field on feeds
+* SMS Tools credentials are now optional, so the plugin can be used with Telegram only
+* Dashboard widget excludes Telegram messages from SMS cost figures
+* Fixed the dashboard's Recent Messages list not showing recipients
 
 = 3.3 =
 * Added GitHub Actions release workflow that builds the distributable plugin zip (with Composer dependencies) and publishes a tagged GitHub Release whenever the plugin version changes
@@ -78,6 +86,9 @@ The plugin imports historical messages from Plivo API (limited to 90 days by Pli
 * Initial release with basic SMS notification functionality
 
 == Upgrade Notice ==
+
+= 3.4 =
+Adds Telegram as an alternative to SMS. Existing feeds keep sending SMS; switch a feed to Telegram under its settings after adding a bot token.
 
 = 3.3 =
 Adds automated release builds and version-bump enforcement via GitHub Actions. No functional changes to SMS sending.

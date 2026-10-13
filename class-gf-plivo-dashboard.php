@@ -38,11 +38,11 @@ class GF_Plivo_Dashboard_Widget {
             return;
         }
         
-        // Calculate cost (assuming 0.03 per message)
+        // Calculate cost (assuming 0.03 per SMS; Telegram messages are free)
         $cost_per_sms = 0.03;
-        $monthly_cost = $usage['month'] * $cost_per_sms;
-        $yearly_cost = $usage['year'] * $cost_per_sms;
-        $total_cost = $usage['total'] * $cost_per_sms;
+        $monthly_cost = (isset($usage['sms_month']) ? $usage['sms_month'] : $usage['month']) * $cost_per_sms;
+        $yearly_cost = (isset($usage['sms_year']) ? $usage['sms_year'] : $usage['year']) * $cost_per_sms;
+        $total_cost = (isset($usage['sms_total']) ? $usage['sms_total'] : $usage['total']) * $cost_per_sms;
         
         // Get package information
         $perPackage = floor(20 / $cost_per_sms);
@@ -96,7 +96,7 @@ class GF_Plivo_Dashboard_Widget {
                     <?php foreach ($usage['recent_messages'] as $message) : ?>
                     <li class="<?php echo esc_attr($message['status']); ?>">
                         <div class="message-meta">
-                            <span class="message-phone"><?php echo esc_html($message['phone_number']); ?></span>
+                            <span class="message-phone"><?php echo esc_html((strpos($message['message_uuid'], 'telegram:') === 0 ? 'Telegram ' : '') . $message['to_number']); ?></span>
                             <span class="message-date"><?php echo esc_html(human_time_diff(strtotime($message['date_created']), current_time('timestamp'))); ?> <?php esc_html_e('ago', 'gravityformsplivo'); ?></span>
                         </div>
                         <div class="message-preview"><?php echo esc_html(wp_trim_words($message['message'], 10)); ?></div>
@@ -262,6 +262,29 @@ class GF_Plivo_Dashboard_Widget {
         
         // Total usage
         $usage['total'] = $wpdb->get_var("SELECT COUNT(*) FROM $table_name");
+
+        // SMS-only counts for cost calculation (Telegram messages are tracked with a "telegram:" UUID prefix)
+        $telegram_like = 'telegram:%';
+        $usage['sms_month'] = $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT COUNT(*) FROM $table_name WHERE date_created >= %s AND message_uuid NOT LIKE %s",
+                $month_start,
+                $telegram_like
+            )
+        );
+        $usage['sms_year'] = $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT COUNT(*) FROM $table_name WHERE date_created >= %s AND message_uuid NOT LIKE %s",
+                $year_start,
+                $telegram_like
+            )
+        );
+        $usage['sms_total'] = $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT COUNT(*) FROM $table_name WHERE message_uuid NOT LIKE %s",
+                $telegram_like
+            )
+        );
         
         // Top forms
         $top_forms_data = $wpdb->get_results(
