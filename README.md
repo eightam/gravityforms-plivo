@@ -14,6 +14,7 @@ This plugin allows you to send SMS notifications when a form is submitted in Gra
 - Preview SMS messages in the entry view
 - Track SMS message history and statistics (including which gateway was used)
 - Resend SMS messages directly from the entry view
+- Send to a Telegram group instead of SMS, per feed
 - Automatic updates via GitHub repository
 
 ## Requirements
@@ -21,9 +22,28 @@ This plugin allows you to send SMS notifications when a form is submitted in Gra
 - WordPress 5.0 or higher
 - Gravity Forms 2.5 or higher
 - PHP 8.0 or higher (required by the SMS Tools SDK)
-- An SMS Tools account (primary) and/or a Plivo account (fallback) with API credentials
+- An SMS Tools account (primary) and/or a Plivo account (fallback) with API credentials, and/or a Telegram bot
+
+## Telegram
+
+Each feed can send via SMS or post to a Telegram group instead.
+
+1. Create a bot with [@BotFather](https://t.me/BotFather) and copy its token.
+2. Add the bot to your Telegram group.
+3. Find the group's chat ID (e.g. `-1001234567890`): send `/start` in the group (bots only see commands by default), then open `https://api.telegram.org/bot<TOKEN>/getUpdates` and look for `chat.id`.
+4. Paste the token under Forms → Settings → Plivo SMS → Telegram Bot Settings.
+5. In the form feed, choose **Send Via: Telegram** and enter the chat ID.
+
+Telegram messages are tracked alongside SMS (gateway `telegram`) but excluded from the dashboard's cost figures.
 
 ## Changelog
+
+### 3.4 - October 13, 2026
+- Added Telegram as a per-feed channel: each feed can now send via SMS or post to a Telegram group through a bot
+- Added Telegram Bot Settings (bot token) and a Telegram Chat ID field on feeds
+- SMS Tools credentials are now optional, so the plugin can be used with Telegram only
+- Dashboard widget excludes Telegram messages from SMS cost figures
+- Fixed the dashboard's Recent Messages list not showing recipients
 
 ### 3.3 - July 21, 2026
 - Added a GitHub Actions release workflow that builds the distributable plugin zip (including Composer dependencies) and publishes a tagged GitHub Release whenever the plugin version changes

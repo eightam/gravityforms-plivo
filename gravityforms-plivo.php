@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Gravity Forms Plivo Add-On
- * Description: Integrate Gravity Forms with SMS Tools (primary) and Plivo (fallback) for SMS notifications
- * Version: 3.3
+ * Description: Integrate Gravity Forms with SMS Tools (primary) and Plivo (fallback) for SMS notifications, or send to Telegram groups
+ * Version: 3.4
  * Author: 8am GmbH
  * Text Domain: gravityformsplivo
  * GitHub Plugin URI: https://github.com/eightam/gravityforms-plivo
@@ -55,7 +55,7 @@ add_action('in_plugin_update_message-gravityforms-plivo/gravityforms-plivo.php',
 GFForms::include_feed_addon_framework();
 
 class GF_Plivo_AddOn extends GFFeedAddOn {
-    protected $_version = '3.3';
+    protected $_version = '3.4';
     protected $_min_gravityforms_version = '2.5';
     protected $_slug = 'gravityformsplivo';
     protected $_path = 'gravityformsplivo/plivo.php';
@@ -112,12 +112,39 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
                         'tooltip'  => esc_html__('Enter a name to identify this SMS notification.', 'gravityformsplivo'),
                     ),
                     array(
-                        'name'     => 'receiverNumber',
-                        'label'    => esc_html__('Receiver Number', 'gravityformsplivo'),
-                        'type'     => 'text',
-                        'required' => true,
-                        'class'    => 'medium',
-                        'tooltip'  => esc_html__('Enter the receiving phone number in E.164 format.', 'gravityformsplivo'),
+                        'name'          => 'channel',
+                        'label'         => esc_html__('Send Via', 'gravityformsplivo'),
+                        'type'          => 'radio',
+                        'horizontal'    => true,
+                        'default_value' => 'sms',
+                        'choices'       => array(
+                            array('label' => esc_html__('SMS', 'gravityformsplivo'), 'value' => 'sms'),
+                            array('label' => esc_html__('Telegram', 'gravityformsplivo'), 'value' => 'telegram'),
+                        ),
+                    ),
+                    array(
+                        'name'       => 'receiverNumber',
+                        'label'      => esc_html__('Receiver Number', 'gravityformsplivo'),
+                        'type'       => 'text',
+                        'required'   => true,
+                        'class'      => 'medium',
+                        'tooltip'    => esc_html__('Enter the receiving phone number in E.164 format.', 'gravityformsplivo'),
+                        'dependency' => array(
+                            'live'   => true,
+                            'fields' => array(array('field' => 'channel', 'values' => array('sms', ''))),
+                        ),
+                    ),
+                    array(
+                        'name'       => 'telegramChatId',
+                        'label'      => esc_html__('Telegram Chat ID', 'gravityformsplivo'),
+                        'type'       => 'text',
+                        'required'   => true,
+                        'class'      => 'medium',
+                        'tooltip'    => esc_html__('The ID of the Telegram group the bot posts to, e.g. -1001234567890. Add the bot to the group first.', 'gravityformsplivo'),
+                        'dependency' => array(
+                            'live'   => true,
+                            'fields' => array(array('field' => 'channel', 'values' => array('telegram'))),
+                        ),
                     ),
                     array(
                         'name'     => 'messageTemplate',
@@ -155,7 +182,7 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
                         'label'    => esc_html__('Client ID', 'gravityformsplivo'),
                         'type'     => 'text',
                         'class'    => 'medium',
-                        'required' => true,
+                        'required' => false,
                         'tooltip'  => esc_html__('Your SMS Tools API Client ID (sent as the X-Client-Id header).', 'gravityformsplivo'),
                     ),
                     array(
@@ -163,7 +190,7 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
                         'label'    => esc_html__('Client Secret', 'gravityformsplivo'),
                         'type'     => 'text',
                         'class'    => 'medium',
-                        'required' => true,
+                        'required' => false,
                         'tooltip'  => esc_html__('Your SMS Tools API Client Secret (sent as the X-Client-Secret header).', 'gravityformsplivo'),
                     ),
                     array(
@@ -171,7 +198,7 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
                         'label'    => esc_html__('Default Sender ID', 'gravityformsplivo'),
                         'type'     => 'text',
                         'class'    => 'medium',
-                        'required' => true,
+                        'required' => false,
                         'tooltip'  => esc_html__('The sender name or number shown to recipients.', 'gravityformsplivo'),
                     ),
                     array(
@@ -210,6 +237,19 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
                         'class'    => 'medium',
                         'required' => false,
                         'tooltip'  => esc_html__('Your registered Plivo Sender ID', 'gravityformsplivo'),
+                    ),
+                ),
+            ),
+            array(
+                'title'       => esc_html__('Telegram Bot Settings', 'gravityformsplivo'),
+                'description' => esc_html__('Used by feeds set to send via Telegram. Create a bot with @BotFather and paste its token here.', 'gravityformsplivo'),
+                'fields'      => array(
+                    array(
+                        'name'     => 'telegram_bot_token',
+                        'label'    => esc_html__('Bot Token', 'gravityformsplivo'),
+                        'type'     => 'text',
+                        'class'    => 'medium',
+                        'required' => false,
                     ),
                 ),
             ),
@@ -253,6 +293,38 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
     }
 
     /**
+     * Whether the Telegram bot is configured.
+     *
+     * @return bool
+     */
+    private function is_telegram_configured() {
+        return !empty($this->get_plugin_setting('telegram_bot_token'));
+    }
+
+    /**
+     * Get the channel a feed sends through. Feeds created before Telegram support default to SMS.
+     *
+     * @param array $feed The feed.
+     * @return string 'sms' or 'telegram'
+     */
+    public function get_feed_channel($feed) {
+        return rgars($feed, 'meta/channel') === 'telegram' ? 'telegram' : 'sms';
+    }
+
+    /**
+     * Get the recipient of a feed: phone number for SMS, chat ID for Telegram.
+     *
+     * @param array $feed The feed.
+     * @return string
+     */
+    public function get_feed_recipient($feed) {
+        if ($this->get_feed_channel($feed) === 'telegram') {
+            return trim(rgars($feed, 'meta/telegramChatId'));
+        }
+        return rgars($feed, 'meta/receiverNumber');
+    }
+
+    /**
      * Configures which columns should be displayed on the feed list page.
      *
      * @return array
@@ -272,6 +344,9 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
      * @return string
      */
     public function get_column_value_receiverNumber($feed) {
+        if ($this->get_feed_channel($feed) === 'telegram') {
+            return 'Telegram: ' . $this->get_feed_recipient($feed);
+        }
         return rgars($feed, 'meta/receiverNumber');
     }
 
@@ -281,9 +356,9 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
      * @return bool
      */
     public function can_create_feed() {
-        // A feed can be created as long as at least one gateway (SMS Tools primary
-        // or Plivo fallback) is fully configured.
-        return $this->is_smstools_configured() || $this->is_plivo_configured();
+        // A feed can be created as long as at least one gateway (SMS Tools primary,
+        // Plivo fallback or Telegram) is fully configured.
+        return $this->is_smstools_configured() || $this->is_plivo_configured() || $this->is_telegram_configured();
     }
     
     /**
@@ -349,8 +424,11 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
                 
                 <?php foreach ($active_feeds as $index => $feed) : 
                     $message_template = rgars($feed, 'meta/messageTemplate');
-                    $receiver_number = rgars($feed, 'meta/receiverNumber');
-                    
+                    $receiver_number = $this->get_feed_recipient($feed);
+                    if ($this->get_feed_channel($feed) === 'telegram') {
+                        $receiver_number = 'Telegram ' . $receiver_number;
+                    }
+
                     // Get message with HTML filtered from merge tags
                     $message = $this->get_message_with_filtered_merge_tags($message_template, $form, $entry);
                     $display = ($index === 0) ? 'block' : 'none';
@@ -955,11 +1033,35 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
         $this->log_debug(__METHOD__ . '(): Processing feed. Is resend: ' . ($is_resend ? 'Yes' : 'No'));
 
         // Get feed data
-        $receiver_number = rgars($feed, 'meta/receiverNumber');
+        $receiver_number = $this->get_feed_recipient($feed);
         $message_template = rgars($feed, 'meta/messageTemplate');
 
         // Get message with HTML filtered from merge tags
         $message = $this->get_message_with_filtered_merge_tags($message_template, $form, $entry);
+
+        // Telegram feeds post to a chat and never fall through to the SMS gateways.
+        if ($this->get_feed_channel($feed) === 'telegram') {
+            try {
+                $message_uuid = $this->send_via_telegram($receiver_number, $message);
+                $this->handle_send_success('telegram', $feed, $entry, $form, $receiver_number, $message, $message_uuid, $is_resend, false);
+                return true;
+            } catch (Exception $e) {
+                $this->log_debug(__METHOD__ . '(): Telegram send failed: ' . $e->getMessage());
+                error_log('Plivo Add-On: Telegram send failed: ' . $e->getMessage());
+
+                $this->add_note_to_entry(
+                    $entry['id'],
+                    __('Telegram Sending Failed', 'gravityformsplivo'),
+                    array(
+                        'to' => $receiver_number,
+                        'message' => $message,
+                        'error' => $e->getMessage()
+                    ),
+                    'error'
+                );
+                return false;
+            }
+        }
 
         $smstools_configured = $this->is_smstools_configured();
         $plivo_configured    = $this->is_plivo_configured();
@@ -1107,6 +1209,53 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
     }
 
     /**
+     * Send a message to a Telegram chat via the Bot API.
+     *
+     * @param string $chat_id Telegram chat ID (e.g. -1001234567890) or @channelusername
+     * @param string $message Message body
+     * @return string Tracking ID in the form "telegram:<chat_id>:<message_id>"
+     * @throws Exception When the bot is not configured or the send fails
+     */
+    private function send_via_telegram($chat_id, $message) {
+        $bot_token = trim((string) $this->get_plugin_setting('telegram_bot_token'));
+
+        if (empty($bot_token)) {
+            throw new Exception(__('Telegram bot token not configured.', 'gravityformsplivo'));
+        }
+        if ($chat_id === '') {
+            throw new Exception(__('Telegram chat ID not configured.', 'gravityformsplivo'));
+        }
+
+        $response = wp_remote_post(
+            'https://api.telegram.org/bot' . $bot_token . '/sendMessage',
+            array(
+                'timeout' => 15,
+                'body'    => array(
+                    'chat_id' => $chat_id,
+                    // Telegram rejects messages over 4096 characters
+                    'text'    => mb_substr($message, 0, 4096),
+                ),
+            )
+        );
+
+        if (is_wp_error($response)) {
+            throw new Exception($response->get_error_message());
+        }
+
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+
+        if (empty($body['ok'])) {
+            $error = !empty($body['description']) ? $body['description'] : 'HTTP ' . wp_remote_retrieve_response_code($response);
+            throw new Exception(sprintf(__('Telegram API error: %s', 'gravityformsplivo'), $error));
+        }
+
+        $this->log_debug(__METHOD__ . '(): Telegram response: ' . print_r($body, true));
+
+        // Telegram message IDs are only unique per chat, so include the chat ID
+        return 'telegram:' . $chat_id . ':' . rgars($body, 'result/message_id');
+    }
+
+    /**
      * Extract a message identifier from the SMS Tools API response.
      *
      * The response shape is not strictly documented, so we look for the most
@@ -1135,7 +1284,7 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
     /**
      * Persist and annotate a successful send.
      *
-     * @param string $gateway The gateway used ('smstools' or 'plivo')
+     * @param string $gateway The gateway used ('smstools', 'plivo' or 'telegram')
      * @param array $feed The feed processed
      * @param array $entry The entry processed
      * @param array $form The form processed
@@ -1166,13 +1315,22 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
             error_log('Plivo Add-On: Failed to track SMS in database. Message UUID: ' . $message_uuid);
         }
 
-        $gateway_label = ($gateway === 'smstools')
-            ? __('SMS Tools', 'gravityformsplivo')
-            : __('Plivo', 'gravityformsplivo');
+        $gateway_labels = array(
+            'smstools' => __('SMS Tools', 'gravityformsplivo'),
+            'plivo'    => __('Plivo', 'gravityformsplivo'),
+            'telegram' => __('Telegram', 'gravityformsplivo'),
+        );
+        $gateway_label = $gateway_labels[$gateway];
 
-        $title = $is_resend
-            ? __('SMS Resent', 'gravityformsplivo')
-            : __('SMS Sent', 'gravityformsplivo');
+        if ($gateway === 'telegram') {
+            $title = $is_resend
+                ? __('Telegram Message Resent', 'gravityformsplivo')
+                : __('Telegram Message Sent', 'gravityformsplivo');
+        } else {
+            $title = $is_resend
+                ? __('SMS Resent', 'gravityformsplivo')
+                : __('SMS Sent', 'gravityformsplivo');
+        }
 
         if ($used_as_fallback) {
             $title .= ' ' . __('(via Plivo fallback)', 'gravityformsplivo');
