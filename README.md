@@ -38,6 +38,14 @@ Telegram messages are tracked alongside SMS (gateway `telegram`) but excluded fr
 
 ## Changelog
 
+### 3.5 - October 13, 2026
+- Fixed the release build: Composer dependencies are now locked for PHP 8.0 (the 3.3 and 3.4 release builds failed, so they shipped without the bundled `vendor/` folder)
+- Updated Guzzle, guzzlehttp/psr7, firebase/php-jwt and plivo-php to versions without known security advisories
+- If SMS Tools fails with any PHP error (not just exceptions), Plivo is still tried as the fallback; the same applies to Telegram failures being recorded on the entry
+- A missing `vendor/` folder no longer causes a fatal error when sending via Plivo; the failure is recorded as an entry note instead
+- Messages stored before 3.2 are now labelled with the `plivo` gateway instead of being left blank
+- The SMS Tools message ID is also read from responses that nest it under `message` or `result`
+
 ### 3.4 - October 13, 2026
 - Added Telegram as a per-feed channel: each feed can now send via SMS or post to a Telegram group through a bot
 - Added Telegram Bot Settings (bot token) and a Telegram Chat ID field on feeds

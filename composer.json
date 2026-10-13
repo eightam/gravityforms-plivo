@@ -1,6 +1,12 @@
 {
 	"require": {
+		"php": ">=8.0",
 		"plivo/plivo-php": "^4.32",
 		"smstools-api/smstools-php-sdk": "^1.0"
+	},
+	"config": {
+		"platform": {
+			"php": "8.0.0"
+		}
 	}
 }
