@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Gravity Forms Plivo Add-On
  * Description: Integrate Gravity Forms with SMS Tools (primary) and Plivo (fallback) for SMS notifications, or send to Telegram groups
- * Version: 3.5
+ * Version: 3.6
  * Author: 8am GmbH
  * Text Domain: gravityformsplivo
  * GitHub Plugin URI: https://github.com/eightam/gravityforms-plivo
@@ -55,7 +55,7 @@ add_action('in_plugin_update_message-gravityforms-plivo/gravityforms-plivo.php',
 GFForms::include_feed_addon_framework();
 
 class GF_Plivo_AddOn extends GFFeedAddOn {
-    protected $_version = '3.5';
+    protected $_version = '3.6';
     protected $_min_gravityforms_version = '2.5';
     protected $_slug = 'gravityformsplivo';
     protected $_path = 'gravityformsplivo/plivo.php';
@@ -1080,7 +1080,7 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
         // Telegram feeds post to a chat and never fall through to the SMS gateways.
         if ($this->get_feed_channel($feed) === 'telegram') {
             try {
-                $message_uuid = $this->send_via_telegram($receiver_number, $message);
+                $message_uuid = $this->send_via_telegram($receiver_number, $message, $feed, $entry, $form);
                 $this->handle_send_success('telegram', $feed, $entry, $form, $receiver_number, $message, $message_uuid, $is_resend, false);
                 return true;
             } catch (\Throwable $e) {
@@ -1251,10 +1251,13 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
      *
      * @param string $chat_id Telegram chat ID (e.g. -1001234567890) or @channelusername
      * @param string $message Message body
+     * @param array $feed The feed being processed
+     * @param array $entry The entry being processed
+     * @param array $form The form being processed
      * @return string Tracking ID in the form "telegram:<chat_id>:<message_id>"
      * @throws Exception When the bot is not configured or the send fails
      */
-    private function send_via_telegram($chat_id, $message) {
+    private function send_via_telegram($chat_id, $message, $feed = array(), $entry = array(), $form = array()) {
         $bot_token = trim((string) $this->get_plugin_setting('telegram_bot_token'));
 
         if (empty($bot_token)) {
@@ -1264,15 +1267,63 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
             throw new Exception(__('Telegram chat ID not configured.', 'gravityformsplivo'));
         }
 
+        $params = array(
+            'chat_id' => $chat_id,
+            // Telegram rejects messages over 4096 characters
+            'text'    => mb_substr($message, 0, 4096),
+        );
+
+        /**
+         * Filters the parameters sent to the Telegram Bot API sendMessage method.
+         *
+         * Used by the Gravity Forms Entry Telegram Mini App plugin to add an
+         * inline "Details öffnen" button (reply_markup). chat_id and text cannot
+         * be changed, so tracking and entry notes match what was sent.
+         *
+         * @param array $params sendMessage parameters
+         * @param array $feed The feed being processed
+         * @param array $entry The entry being processed
+         * @param array $form The form being processed
+         */
+        $filtered = apply_filters('gf_plivo_telegram_message_params', $params, $feed, $entry, $form);
+        if (is_array($filtered)) {
+            $params = array_merge($filtered, $params);
+        }
+
+        $body = $this->telegram_send_message($bot_token, $params);
+
+        // A broken extra (e.g. an invalid button URL) must not cost the message itself.
+        if (empty($body['ok']) && isset($params['reply_markup'])) {
+            $this->log_debug(__METHOD__ . '(): Telegram rejected the message with reply_markup, retrying without: ' . rgar($body, 'description'));
+            unset($params['reply_markup']);
+            $body = $this->telegram_send_message($bot_token, $params);
+        }
+
+        if (empty($body['ok'])) {
+            $error = !empty($body['description']) ? $body['description'] : 'HTTP ' . rgar($body, 'http_code');
+            throw new Exception(sprintf(__('Telegram API error: %s', 'gravityformsplivo'), $error));
+        }
+
+        $this->log_debug(__METHOD__ . '(): Telegram response: ' . print_r($body, true));
+
+        // Telegram message IDs are only unique per chat, so include the chat ID
+        return 'telegram:' . $chat_id . ':' . rgars($body, 'result/message_id');
+    }
+
+    /**
+     * Call the Bot API sendMessage method.
+     *
+     * @param string $bot_token Bot token
+     * @param array $params sendMessage parameters
+     * @return array Decoded response body; includes 'http_code' when the body is not JSON
+     * @throws Exception When the request fails
+     */
+    private function telegram_send_message($bot_token, $params) {
         $response = wp_remote_post(
             'https://api.telegram.org/bot' . $bot_token . '/sendMessage',
             array(
                 'timeout' => 15,
-                'body'    => array(
-                    'chat_id' => $chat_id,
-                    // Telegram rejects messages over 4096 characters
-                    'text'    => mb_substr($message, 0, 4096),
-                ),
+                'body'    => $params,
             )
         );
 
@@ -1282,15 +1333,7 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
 
         $body = json_decode(wp_remote_retrieve_body($response), true);
 
-        if (empty($body['ok'])) {
-            $error = !empty($body['description']) ? $body['description'] : 'HTTP ' . wp_remote_retrieve_response_code($response);
-            throw new Exception(sprintf(__('Telegram API error: %s', 'gravityformsplivo'), $error));
-        }
-
-        $this->log_debug(__METHOD__ . '(): Telegram response: ' . print_r($body, true));
-
-        // Telegram message IDs are only unique per chat, so include the chat ID
-        return 'telegram:' . $chat_id . ':' . rgars($body, 'result/message_id');
+        return is_array($body) ? $body : array('ok' => false, 'http_code' => wp_remote_retrieve_response_code($response));
     }
 
     /**

@@ -3,7 +3,7 @@ Contributors: 8amgmbh
 Tags: gravity forms, sms tools, plivo, sms, notifications
 Requires at least: 5.0
 Tested up to: 6.4
-Stable tag: 3.5
+Stable tag: 3.6
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -46,6 +46,10 @@ Yes, you can create multiple feeds with different conditions to send SMS to diff
 The plugin imports historical messages from Plivo API (limited to 90 days by Plivo's API). All new messages sent after installation are tracked indefinitely in the local database.
 
 == Changelog ==
+
+= 3.6 =
+* Added the `gf_plivo_telegram_message_params` filter for the Telegram sendMessage parameters (used by the Gravity Forms Entry Telegram Mini App plugin to add a "Details öffnen" button)
+* If Telegram rejects a message because of an added button, the message is sent again without the button
 
 = 3.5 =
 * Fixed the release build: Composer dependencies are now locked for PHP 8.0 (the 3.3 and 3.4 release builds failed, so they shipped without the bundled `vendor/` folder)
