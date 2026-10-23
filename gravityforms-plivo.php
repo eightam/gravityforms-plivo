@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Gravity Forms Plivo Add-On
  * Description: Integrate Gravity Forms with SMS Tools (primary) and Plivo (fallback) for SMS notifications, or send to Telegram groups
- * Version: 3.6
+ * Version: 3.7
  * Author: 8am GmbH
  * Text Domain: gravityformsplivo
  * GitHub Plugin URI: https://github.com/eightam/gravityforms-plivo
@@ -55,7 +55,7 @@ add_action('in_plugin_update_message-gravityforms-plivo/gravityforms-plivo.php',
 GFForms::include_feed_addon_framework();
 
 class GF_Plivo_AddOn extends GFFeedAddOn {
-    protected $_version = '3.6';
+    protected $_version = '3.7';
     protected $_min_gravityforms_version = '2.5';
     protected $_slug = 'gravityformsplivo';
     protected $_path = 'gravityformsplivo/plivo.php';
@@ -1242,6 +1242,15 @@ class GF_Plivo_AddOn extends GFFeedAddOn {
         );
 
         $this->log_debug(__METHOD__ . '(): Plivo response: ' . print_r($response, true));
+
+        // Since plivo-php 4.71, 4xx responses are returned as an error object instead of thrown
+        if ($response instanceof \Plivo\Resources\Message\MessageCreateErrorResponse) {
+            throw new Exception(sprintf(
+                __('Plivo API error (HTTP %1$d): %2$s', 'gravityformsplivo'),
+                $response->getStatusCode(),
+                is_scalar($response->error) ? $response->error : wp_json_encode($response->error)
+            ));
+        }
 
         return $response->getMessageUuid()[0];
     }
