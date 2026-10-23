@@ -40,6 +40,9 @@ Other plugins can add `sendMessage` parameters with the `gf_plivo_telegram_messa
 
 ## Changelog
 
+### 3.7 - October 23, 2026
+- Fixed Plivo errors (HTTP 4xx, e.g. 415) being recorded as "Call to undefined method MessageCreateErrorResponse::getMessageUuid()" since the plivo-php 4.71 update in 3.5; the entry note now shows Plivo's HTTP status and error message
+
 ### 3.6 - October 13, 2026
 - Added the `gf_plivo_telegram_message_params` filter for the Telegram `sendMessage` parameters (used by the Gravity Forms Entry Telegram Mini App plugin to add a "Details öffnen" button)
 - If Telegram rejects a message because of an added button, the message is sent again without the button
